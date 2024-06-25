@@ -36,8 +36,8 @@
       <Unit0>
         <Filename Value="Igdc186.lpr"/>
         <IsPartOfProject Value="True"/>
-        <CursorPos X="51" Y="11"/>
-        <UsageCount Value="32"/>
+        <CursorPos X="30" Y="12"/>
+        <UsageCount Value="25"/>
         <Loaded Value="True"/>
       </Unit0>
     </Units>
@@ -46,11 +46,11 @@
     <Version Value="11"/>
     <PathDelim Value="\"/>
     <Target>
-      <Filename Value="bin\Igdc186"/>
+      <Filename Value="bin/Igdc186"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="\media\dan\Data\Workspace\g2mp\source\;\media\dan\Data\Workspace\g2mp\source\box2d\;\media\dan\Data\Workspace\g2mp\source\spine\;source"/>
+      <OtherUnitFiles Value="C:\Workspace\g2mp\source\;C:\Workspace\g2mp\source\box2d\;C:\Workspace\g2mp\source\spine\;source\"/>
       <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Linking>
@@ -63,11 +63,6 @@
         </Win32>
       </Options>
     </Linking>
-    <Other>
-      <ConfigFile>
-        <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
-      </ConfigFile>
-    </Other>
   </CompilerOptions>
   <Debugging>
     <Exceptions Count="3">
