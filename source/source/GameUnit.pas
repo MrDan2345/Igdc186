@@ -750,12 +750,29 @@ begin
 end;
 
 procedure TGame.OnAction(const Swap: Boolean);
-  var w: Int32;
+  var w, i: Int32;
+  var p: TPoint;
+  var ValidState: Boolean;
 begin
   w := Grid.IsWin;
   if w = -1 then
   begin
     if Swap then SwapPlayers;
+    ValidState := False;
+    for i := 0 to High(Dirs) do
+    begin
+      p := Point(Grid.Ball.x + Dirs[i].x, Grid.Ball.y + Dirs[i].y);
+      if Grid.IsValidMove(Grid.Ball.x, Grid.Ball.y, p.x, p.y) then
+      begin
+        ValidState := True;
+        Break;
+      end;
+    end;
+    if not ValidState then
+    begin
+      ShowMessage('Draw...');
+      Grid.Setup;
+    end;
     Exit;
   end;
   ShowMessage('Player ' + IntToStr(w + 1) + ' wins!');
