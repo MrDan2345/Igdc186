@@ -28,11 +28,11 @@
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="../release/bin/SoccerStrats"/>
+            <Filename Value="..\release\bin\SoccerStrats"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="C:\Workspace\g2mp\source\;C:\Workspace\g2mp\source\box2d\;C:\Workspace\g2mp\source\spine\;source\"/>
+            <OtherUnitFiles Value="C:\Workspace\g2mp\source;C:\Workspace\g2mp\source\box2d;C:\Workspace\g2mp\source\spine;source"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -62,6 +62,11 @@
               </Win32>
             </Options>
           </Linking>
+          <Other>
+            <ConfigFile>
+              <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
+            </ConfigFile>
+          </Other>
         </CompilerOptions>
       </Item2>
       <Item3 Name="Release">
@@ -69,11 +74,11 @@
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="../release/bin/SoccerStrats"/>
+            <Filename Value="..\release\bin\SoccerStrats"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="C:\Workspace\g2mp\source\;C:\Workspace\g2mp\source\box2d\;C:\Workspace\g2mp\source\spine\;source\"/>
+            <OtherUnitFiles Value="..\..\g2mp\source;..\..\g2mp\source\box2d;..\..\g2mp\source\spine;source"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <CodeGeneration>
@@ -94,6 +99,11 @@
               </Win32>
             </Options>
           </Linking>
+          <Other>
+            <ConfigFile>
+              <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
+            </ConfigFile>
+          </Other>
         </CompilerOptions>
       </Item3>
     </BuildModes>
@@ -110,7 +120,8 @@
       <Unit0>
         <Filename Value="Igdc186.lpr"/>
         <IsPartOfProject Value="True"/>
-        <CursorPos X="24" Y="13"/>
+        <IsVisibleTab Value="True"/>
+        <CursorPos X="57" Y="12"/>
         <UsageCount Value="23"/>
         <Loaded Value="True"/>
       </Unit0>
@@ -120,11 +131,11 @@
     <Version Value="11"/>
     <PathDelim Value="\"/>
     <Target>
-      <Filename Value="../release/bin/SoccerStrats"/>
+      <Filename Value="..\release\bin\SoccerStrats"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="C:\Workspace\g2mp\source\;C:\Workspace\g2mp\source\box2d\;C:\Workspace\g2mp\source\spine\;source\"/>
+      <OtherUnitFiles Value="C:\Workspace\g2mp\source;C:\Workspace\g2mp\source\box2d;C:\Workspace\g2mp\source\spine;source"/>
       <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Linking>
@@ -137,6 +148,11 @@
         </Win32>
       </Options>
     </Linking>
+    <Other>
+      <ConfigFile>
+        <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
+      </ConfigFile>
+    </Other>
   </CompilerOptions>
   <Debugging>
     <Exceptions Count="3">
