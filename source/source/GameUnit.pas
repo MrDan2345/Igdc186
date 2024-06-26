@@ -29,7 +29,10 @@ type TPlayer = record
   Score: Int32;
 end;
 
-type TMove = array[0..1] of TPoint;
+type TMove = record
+  Place: array[0..1] of TPoint;
+  Color: TG2Color;
+end;
 
 type TGrid = record
   Cells: array [-5..5, -4..4] of TGridCell;
@@ -63,7 +66,7 @@ type TMenu = record
   procedure Render;
 end;
 
-type TGameMode = (gm_pvp, gm_pvg);
+type TGameMode = (gm_pvp, gm_pvb, gm_bvb);
 
 type TAI = record
   UpdateTime: TG2Float;
@@ -86,6 +89,7 @@ public
   var MsgTime: TG2Float;
   var MsgDuration: TG2Float;
   var IsMenu: Boolean;
+  var EndDelay: TG2Float;
   var Menu: TMenu;
   var Mode: TGameMode;
   var AI: TAI;
@@ -106,7 +110,8 @@ public
   procedure SwapPlayers;
   procedure OnAction(const Swap: Boolean);
   procedure OnStartPvP;
-  procedure OnStartPvG;
+  procedure OnStartPvB;
+  procedure OnStartBvB;
 end;
 
 var Game: TGame;
@@ -140,18 +145,18 @@ begin
   for i := 0 to High(InvalidMoves) do
   for n := 0 to 1 do
   begin
-    if (InvalidMoves[i][n].x = x1)
-    and (InvalidMoves[i][n].y = y1)
-    and (InvalidMoves[i][(n + 1) mod 2].x = x2)
-    and (InvalidMoves[i][(n + 1) mod 2].y = y2) then Exit(False);
+    if (InvalidMoves[i].Place[n].x = x1)
+    and (InvalidMoves[i].Place[n].y = y1)
+    and (InvalidMoves[i].Place[(n + 1) mod 2].x = x2)
+    and (InvalidMoves[i].Place[(n + 1) mod 2].y = y2) then Exit(False);
   end;
   for i := 0 to High(Moves) do
   for n := 0 to 1 do
   begin
-    if (Moves[i][n].x = x1)
-    and (Moves[i][n].y = y1)
-    and (Moves[i][(n + 1) mod 2].x = x2)
-    and (Moves[i][(n + 1) mod 2].y = y2) then Exit(False);
+    if (Moves[i].Place[n].x = x1)
+    and (Moves[i].Place[n].y = y1)
+    and (Moves[i].Place[(n + 1) mod 2].x = x2)
+    and (Moves[i].Place[(n + 1) mod 2].y = y2) then Exit(False);
   end;
   Result := True;
 end;
@@ -187,8 +192,9 @@ begin
   end;
   i := Length(Moves);
   SetLength(Moves, i + 1);
-  Moves[i][0] := Ball;
-  Moves[i][1] := p;
+  Moves[i].Color := TG2Color(PlayerColors[Game.CurPlayer]).ScaleRGB(0.5);
+  Moves[i].Place[0] := Ball;
+  Moves[i].Place[1] := p;
   Result := not Cells[p.x, p.y].Bounce;
   AddBounce(Ball.x, Ball.y);
   AddBounce(p.x, p.y);
@@ -201,10 +207,10 @@ procedure TGrid.Setup;
   begin
     i := Length(InvalidMoves);
     SetLength(InvalidMoves, i + 1);
-    InvalidMoves[i][0].x := x1;
-    InvalidMoves[i][0].y := y1;
-    InvalidMoves[i][1].x := x2;
-    InvalidMoves[i][1].y := y2;
+    InvalidMoves[i].Place[0].x := x1;
+    InvalidMoves[i].Place[0].y := y1;
+    InvalidMoves[i].Place[1].x := x2;
+    InvalidMoves[i].Place[1].y := y2;
   end;
   var x, y, i, n: Int32;
 begin
@@ -312,9 +318,10 @@ procedure TGrid.Draw;
     Game.DrawLine(-1, 1, -1, -1, Color);
   end;
   procedure DrawBall;
-    const c = $ffff0000;
-    var c1: TG2Color;
+    //const c = $ffff0000;
+    var c, c1: TG2Color;
   begin
+    c := PlayerColors[Game.CurPlayer];
     c1 := c;
     c1.a := 0;
     Game.Display.PrimCircleCol(Ball.x, Ball.y, 0.2, c, c);
@@ -342,9 +349,9 @@ procedure TGrid.Draw;
     for i := 0 to High(Moves) do
     begin
       Game.DrawLine(
-        Moves[i][0].x, Moves[i][0].y,
-        Moves[i][1].x, Moves[i][1].y,
-        $ff606060
+        Moves[i].Place[0].x, Moves[i].Place[0].y,
+        Moves[i].Place[1].x, Moves[i].Place[1].y,
+        Moves[i].Color
       );
     end;
   end;
@@ -353,8 +360,8 @@ begin
   DrawLining;
   DrawBorder;
   DrawMoves;
-  if (Game.Mode <> gm_pvg)
-  or (Game.CurPlayer = 0) then
+  if ((Game.Mode <> gm_pvb) or (Game.CurPlayer = 0))
+  and (Game.Mode <> gm_bvb) then
   begin
     DrawNextMove;
   end;
@@ -387,8 +394,8 @@ procedure TGrid.DebugDraw;
     for i := 0 to High(InvalidMoves) do
     begin
       Game.DrawLine(
-        InvalidMoves[i][0].x, InvalidMoves[i][0].y,
-        InvalidMoves[i][1].x, InvalidMoves[i][1].y,
+        InvalidMoves[i].Place[0].x, InvalidMoves[i].Place[0].y,
+        InvalidMoves[i].Place[1].x, InvalidMoves[i].Place[1].y,
         $ffff0000
       );
     end;
@@ -437,7 +444,8 @@ procedure TMenu.Setup;
 begin
   Spacing := g2.Params.Height * 0.1;
   AddButton('Player vs Player', @Game.OnStartPvP);
-  AddButton('Player vs AI', @Game.OnStartPvG);
+  AddButton('Player vs AI', @Game.OnStartPvB);
+  AddButton('AI vs AI', @Game.OnStartBvB);
 end;
 
 procedure TMenu.Render;
@@ -502,6 +510,7 @@ function TAI.MakeMove(const TargetX: Int32; const TargetY: Int32): Boolean;
     if not AddCheckedMove(m) then Exit;
     Result := G2Min(Result, (G2Vec2(m) - Tgt).Len + (Random - 0.5));
     DebugPath(m);
+    if (m.x = -TargetX) and (m.y = TargetY) then Exit(999);
     if (m.x = TargetX) and (m.y = TargetY) then Exit(0);
     if not Game.Grid.Cells[m.x, m.y].Bounce then Exit;
     for i := 0 to High(Dirs) do
@@ -529,7 +538,7 @@ begin
     p := Point(cp.x + Dirs[i].x, cp.y + Dirs[i].y);
     if not Game.Grid.IsValidMove(cp.x, cp.y, p.x, p.y) then Continue;
     d := CheckMove(p);
-    if (p.x = -TargetX) and (p.y = TargetY) then d := 99;
+    if (p.x = -TargetX) and (p.y = TargetY) then d := 999;
     if d >= BestMoveDist then Continue;
     Path := LastPath;
     BestMoveDist := d;
@@ -546,7 +555,7 @@ begin
   UpdateTime -= g2.DeltaTimeSec;
   if UpdateTime > 0 then Exit(False);
   UpdateTime := 1;
-  Result := MakeMove;
+  Result := MakeMove(-5 * (Game.CurPlayer * 2 - 1), 0);
 end;
 
 procedure TAI.DebugDraw;
@@ -618,6 +627,7 @@ begin
     Players[i].Score := 0;
   end;
   CurPlayer := 0;
+  EndDelay := -1;
 end;
 
 procedure TGame.Finalize;
@@ -630,7 +640,16 @@ end;
 procedure TGame.Update;
 begin
   if MsgTime < MsgDuration then MsgTime += g2.DeltaTimeSec;
-  if (Mode = gm_pvg) and (CurPlayer = 1) then
+  if EndDelay > 0 then
+  begin
+    EndDelay -= g2.DeltaTimeSec;
+    if EndDelay <= 0 then
+    begin
+      Grid.Setup;
+    end;
+    Exit;
+  end;
+  if ((Mode = gm_pvb) and (CurPlayer = 1)) or (Mode = gm_bvb) then
   begin
     OnAction(AI.Update);
   end;
@@ -650,7 +669,7 @@ begin
   g2.Clear($ffa0a0a0);
   Grid.Draw;
   Grid.DebugDraw;
-  //if Mode = gm_pvg then AI.DebugDraw;
+  //if Mode = gm_pvb then AI.DebugDraw;
   for i := 0 to High(Players) do
   begin
     s := 'Player ' + IntToStr(i + 1) + ': ' + IntToStr(Players[i].Score);
@@ -665,8 +684,9 @@ begin
   );
   if MsgTime < MsgDuration then
   begin
+    x := MsgDuration * 0.5;
     c := 0;
-    c.a := Trunc((Power(1 - Abs((MsgDuration * 0.5) - MsgTime), 0.7)) * 255);
+    c.a := Trunc((Power(1 - Abs(x - MsgTime) / x, 0.7)) * 255);
     Font1.Print(
       (g2.Params.Width - Font1.TextWidth(Msg)) * 0.5,
       g2.Params.Height - Font1.TextHeight(Msg),
@@ -695,7 +715,7 @@ begin
     Menu.Click(x, y);
     Exit;
   end;
-  if (Mode = gm_pvg)
+  if (Mode = gm_pvb)
   and (CurPlayer = 1) then Exit;
   OnAction(Grid.Action);
 end;
@@ -746,7 +766,7 @@ end;
 procedure TGame.SwapPlayers;
 begin
   CurPlayer := (CurPlayer + 1) mod 2;
-  ShowMessage('Player ' + IntToStr(CurPlayer + 1) + ' turn');
+  ShowMessage('Player ' + IntToStr(CurPlayer + 1) + ' turn', 1);
 end;
 
 procedure TGame.OnAction(const Swap: Boolean);
@@ -771,13 +791,15 @@ begin
     if not ValidState then
     begin
       ShowMessage('Draw...');
-      Grid.Setup;
+      EndDelay := 1;
+      //Grid.Setup;
     end;
     Exit;
   end;
   ShowMessage('Player ' + IntToStr(w + 1) + ' wins!');
   Inc(Players[w].Score);
-  Grid.Setup;
+  EndDelay := 1;
+  //Grid.Setup;
 end;
 
 procedure TGame.OnStartPvP;
@@ -786,11 +808,18 @@ begin
   Mode := gm_pvp;
 end;
 
-procedure TGame.OnStartPvG;
+procedure TGame.OnStartPvB;
 begin
   IsMenu := False;
-  Mode := gm_pvg;
+  Mode := gm_pvb;
 end;
+
+procedure TGame.OnStartBvB;
+begin
+  IsMenu := False;
+  Mode := gm_bvb;
+end;
+
 //TGame END
 
 end.
