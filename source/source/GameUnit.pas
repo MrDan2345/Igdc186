@@ -224,7 +224,6 @@ begin
   InvalidMoves := nil;
   for i := -4 to 3 do
   begin
-    AddInvalidMove(0, i, 0, i + 1);
     AddInvalidMove(i, -4, i + 1, -4);
     AddInvalidMove(i, 4, i + 1, 4);
   end;
@@ -235,6 +234,12 @@ begin
     AddInvalidMove(-4, -i, -4, -(i + 1));
     AddInvalidMove(4, -i, 4, -(i + 1));
   end;
+  //{
+  for i := 1 to 3 do
+  begin
+    AddInvalidMove(0, i, 0, i + 1);
+    AddInvalidMove(0, -i, 0, -(i + 1));
+  end;
   for i := 0 to 1 do
   begin
     if i = 0 then n := -1 else n := 1;
@@ -243,6 +248,7 @@ begin
     AddInvalidMove(n, n, n, 0);
     AddInvalidMove(-n, n, -n, 0);
   end;
+  //}
   for i := -4 to 4 do
   begin
     AddBounce(i, -4);
@@ -311,7 +317,8 @@ procedure TGrid.Draw;
       Game.Display.PrimLine(-n, i, n, i, Color);
       Game.Display.PrimLine(i, -4, i, 4, Color);
     end;
-    Game.DrawLine(0, -4, 0, 4, Color);
+    Game.DrawLine(0, -1, 0, -4, Color);
+    Game.DrawLine(0, 1, 0, 4, Color);
     Game.DrawLine(-1, -1, 1, -1, Color);
     Game.DrawLine(1, -1, 1, 1, Color);
     Game.DrawLine(1, 1, -1, 1, Color);
@@ -425,8 +432,10 @@ end;
 function TMenu.Click(x, y: TG2Float): Boolean;
   var btn: Int32;
 begin
+  Result := False;
   btn := PointInButton(x, y);
   if btn = -1 then Exit;
+  Result := True;
   if not Assigned(Buttons[btn].Action) then Exit;
   Buttons[btn].Action();
 end;
@@ -480,6 +489,7 @@ end;
 
 function TAI.MakeMove(const TargetX: Int32; const TargetY: Int32): Boolean;
   var LastPath: array of TPoint;
+  var DirOrder: array [0..7] of Int32;
   procedure DebugPath(const p: TPoint);
     var i: Int32;
   begin
@@ -504,7 +514,7 @@ function TAI.MakeMove(const TargetX: Int32; const TargetY: Int32): Boolean;
   end;
   function CheckMove(const m: TPoint): TG2Float;
     var i: Int32;
-    var p: TPoint;
+    var p, Dir: TPoint;
   begin
     Result := 100;
     if not AddCheckedMove(m) then Exit;
@@ -515,17 +525,30 @@ function TAI.MakeMove(const TargetX: Int32; const TargetY: Int32): Boolean;
     if not Game.Grid.Cells[m.x, m.y].Bounce then Exit;
     for i := 0 to High(Dirs) do
     begin
-      p := Point(m.x + Dirs[i].x, m.y + Dirs[i].y);
+      Dir := Dirs[DirOrder[i]];
+      p := Point(m.x + Dir.x, m.y + Dir.y);
       if not Game.Grid.IsValidMove(m.x, m.y, p.x, p.y) then Continue;
       Result := G2Min(Result, CheckMove(p));
     end;
   end;
-  var BestMove: TPoint;
+  var BestMove, Dir: TPoint;
   var BestMoveDist, d: TG2Float;
   var AnyMoveFound: Boolean;
   var cp, p: TPoint;
-  var i: Int32;
+  var i, n, t: Int32;
 begin
+  for i := 0 to High(DirOrder) do
+  begin
+    DirOrder[i] := i;
+  end;
+  for i := 0 to High(DirOrder) do
+  begin
+    n := Random(Length(DirOrder));
+    if n = i then n := (i + 1) mod Length(DirOrder);
+    t := DirOrder[i];
+    DirOrder[i] := DirOrder[n];
+    DirOrder[n] := t;
+  end;
   Tgt := G2Vec2(TargetX, TargetY);
   BestMoveDist := 1000;
   AnyMoveFound := False;
@@ -533,9 +556,10 @@ begin
   AddCheckedMove(cp);
   for i := 0 to High(Dirs) do
   begin
+    Dir := Dirs[DirOrder[i]];
     LastPath := nil;
     DebugPath(cp);
-    p := Point(cp.x + Dirs[i].x, cp.y + Dirs[i].y);
+    p := Point(cp.x + Dir.x, cp.y + Dir.y);
     if not Game.Grid.IsValidMove(cp.x, cp.y, p.x, p.y) then Continue;
     d := CheckMove(p);
     if (p.x = -TargetX) and (p.y = TargetY) then d := 999;

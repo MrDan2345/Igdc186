@@ -120,9 +120,8 @@
       <Unit0>
         <Filename Value="Igdc186.lpr"/>
         <IsPartOfProject Value="True"/>
-        <IsVisibleTab Value="True"/>
         <CursorPos X="92" Y="15"/>
-        <UsageCount Value="42"/>
+        <UsageCount Value="44"/>
         <Loaded Value="True"/>
       </Unit0>
     </Units>
