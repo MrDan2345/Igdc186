@@ -78,7 +78,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="..\..\g2mp\source;..\..\g2mp\source\box2d;..\..\g2mp\source\spine;source"/>
+            <OtherUnitFiles Value="g2mp\source;g2mp\source\box2d;g2mp\source\spine;source"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <CodeGeneration>
@@ -120,7 +120,8 @@
       <Unit0>
         <Filename Value="Igdc186.lpr"/>
         <IsPartOfProject Value="True"/>
-        <CursorPos X="57" Y="12"/>
+        <IsVisibleTab Value="True"/>
+        <CursorPos X="92" Y="15"/>
         <UsageCount Value="42"/>
         <Loaded Value="True"/>
       </Unit0>
