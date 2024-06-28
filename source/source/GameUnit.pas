@@ -18,7 +18,8 @@ uses
   Classes,
   SysUtils,
   box2d,
-  G2PerlinNoise;
+  WinSock2,
+  Sockets;
 
 type TGridCell = record
   Bounce: Boolean;
@@ -56,14 +57,27 @@ type TMenuButton = record
   Action: TG2ProcObj;
 end;
 
-type TMenu = record
+type TSubMenu = object
+public
+  Name: String;
   Buttons: array of TMenuButton;
   Spacing: TG2Float;
   function PointInButton(const x, y: TG2Float): Int32;
   function Click(x, y: TG2Float): Boolean;
   procedure AddButton(const Caption: String; const Action: TG2ProcObj = nil);
-  procedure Setup;
   procedure Render;
+end;
+type PSubMenu = ^TSubMenu;
+
+type TMenu = object (TSubMenu)
+public
+  SubMenus: array of TSubMenu;
+  CurSubMenu: Int32;
+  function AddSubMenu(const SubMenuName: String): PSubMenu;
+  function FindSubMenu(const SubMenuName: String): PSubMenu;
+  function SetSubMenu(const SubMenuName: String = ''): Boolean;
+  procedure Setup;
+  procedure RenderAll;
 end;
 
 type TGameMode = (gm_pvp, gm_pvb, gm_bvb);
@@ -75,6 +89,15 @@ type TAI = record
   function MakeMove(const TargetX: Int32 = -5; const TargetY: Int32 = 0): Boolean;
   function Update: Boolean;
   procedure DebugDraw;
+end;
+
+type TLAN = record
+  HostAddresses: array of Sockets.TInAddr;
+  Enabled: Boolean;
+  procedure Setup;
+  procedure Start;
+  procedure Stop;
+  procedure RenderMenu;
 end;
 
 type TGame = class
@@ -93,6 +116,7 @@ public
   var Menu: TMenu;
   var Mode: TGameMode;
   var AI: TAI;
+  var LAN: TLAN;
   constructor Create;
   destructor Destroy; override;
   procedure Initialize;
@@ -112,6 +136,8 @@ public
   procedure OnStartPvP;
   procedure OnStartPvB;
   procedure OnStartBvB;
+  procedure OnStartLocal;
+  procedure OnStartLAN;
 end;
 
 var Game: TGame;
@@ -411,7 +437,7 @@ begin
   //DrawInvalidMoves;
 end;
 
-function TMenu.PointInButton(const x, y: TG2Float): Int32;
+function TSubMenu.PointInButton(const x, y: TG2Float): Int32;
   var i: Int32;
   var tx, ty, dy: TG2Float;
   var w, h: TG2Float;
@@ -429,7 +455,7 @@ begin
   Result := -1;
 end;
 
-function TMenu.Click(x, y: TG2Float): Boolean;
+function TSubMenu.Click(x, y: TG2Float): Boolean;
   var btn: Int32;
 begin
   Result := False;
@@ -440,7 +466,7 @@ begin
   Buttons[btn].Action();
 end;
 
-procedure TMenu.AddButton(const Caption: String; const Action: TG2ProcObj);
+procedure TSubMenu.AddButton(const Caption: String; const Action: TG2ProcObj);
   var i: Int32;
 begin
   i := Length(Buttons);
@@ -449,15 +475,7 @@ begin
   Buttons[i].Action := Action;
 end;
 
-procedure TMenu.Setup;
-begin
-  Spacing := g2.Params.Height * 0.1;
-  AddButton('Player vs Player', @Game.OnStartPvP);
-  AddButton('Player vs AI', @Game.OnStartPvB);
-  AddButton('AI vs AI', @Game.OnStartBvB);
-end;
-
-procedure TMenu.Render;
+procedure TSubMenu.Render;
   var i: Int32;
   var s: String;
   var y, dy: TG2Float;
@@ -480,6 +498,64 @@ begin
     );
     y += dy;
   end;
+end;
+
+function TMenu.AddSubMenu(const SubMenuName: String): PSubMenu;
+  var i: Int32;
+begin
+  i := Length(SubMenus);
+  SetLength(SubMenus, i + 1);
+  SubMenus[i].Name := SubMenuName;
+  SubMenus[i].Spacing := Spacing;
+  Result := @SubMenus[i];
+end;
+
+function TMenu.FindSubMenu(const SubMenuName: String): PSubMenu;
+  var i: Int32;
+begin
+  for i := 0 to High(SubMenus) do
+  begin
+    if SubMenus[i].Name = SubMenuName then Exit(@SubMenus[i]);
+  end;
+  Result := nil;
+end;
+
+function TMenu.SetSubMenu(const SubMenuName: String): Boolean;
+  var i: Int32;
+begin
+  for i := 0 to High(SubMenus) do
+  if SubMenus[i].Name = SubMenuName then
+  begin
+     CurSubMenu := i;
+     Exit(True);
+  end;
+  CurSubMenu := -1;
+  Result := False;
+end;
+
+procedure TMenu.Setup;
+  var SubMenu: PSubMenu;
+begin
+  Name := 'Main';
+  CurSubMenu := -1;
+  Spacing := g2.Params.Height * 0.1;
+  AddButton('Player vs Player', @Game.OnStartPvP);
+  AddButton('Player vs AI', @Game.OnStartPvB);
+  AddButton('AI vs AI', @Game.OnStartBvB);
+  SubMenu := AddSubMenu('PvP');
+  SubMenu^.AddButton('LAN', @Game.OnStartLocal);
+  SubMenu^.AddButton('Local', @Game.OnStartLAN);
+  SubMenu := AddSubMenu('LAN');
+end;
+
+procedure TMenu.RenderAll;
+begin
+  if CurSubMenu in [Low(SubMenus)..High(SubMenus)] then
+  begin
+    SubMenus[CurSubMenu].Render;
+    Exit;
+  end;
+  Render;
 end;
 
 procedure TAI.Setup;
@@ -596,6 +672,50 @@ begin
   end;
 end;
 
+procedure TLAN.Setup;
+  type TInAddrArr = array[UInt32] of TInAddr;
+  type PInAddrArr = ^TInAddrArr;
+  var Buffer: array[0..255] of AnsiChar;
+  var HostName, s: String;
+  var Host: PHostEnt;
+  var AddrArr: PInAddrArr;
+  var Addr: Sockets.TInAddr;
+  var i: Int32;
+begin
+  Enabled := False;
+  {
+  GetHostName(@Buffer, SizeOf(Buffer));
+  HostName := Buffer;
+  Host := GetHostByName(PAnsiChar(HostName));
+  if not Assigned(Host) then Exit;
+  AddrArr := PInAddrArr(Host^.h_Addr_List^);
+  i := 0;
+  while AddrArr^[i].S_addr <> 0 do
+  begin
+    Addr := Sockets.PInAddr(@AddrArr^[i].S_addr)^;
+    //specialize UArrAppend<Sockets.TInAddr>(_Addresses, Addr);
+    s := NetAddrToStr(Addr);
+    WriteLn(s);
+    Inc(i);
+  end;
+  }
+end;
+
+procedure TLAN.Start;
+begin
+  Enabled := True;
+end;
+
+procedure TLAN.Stop;
+begin
+  Enabled := False;
+end;
+
+procedure TLAN.RenderMenu;
+begin
+
+end;
+
 //TGame BEGIN
 constructor TGame.Create;
 begin
@@ -646,6 +766,7 @@ begin
   Menu.Setup;
   Grid.Setup;
   AI.Setup;
+  LAN.Setup;
   for i := 0 to High(Players) do
   begin
     Players[i].Score := 0;
@@ -687,7 +808,8 @@ procedure TGame.Render;
 begin
   if IsMenu then
   begin
-    Menu.Render;
+    Menu.RenderAll;
+    if LAN.Enabled then LAN.RenderMenu;
     Exit;
   end;
   g2.Clear($ffa0a0a0);
@@ -828,8 +950,9 @@ end;
 
 procedure TGame.OnStartPvP;
 begin
-  IsMenu := False;
-  Mode := gm_pvp;
+  Menu.SetSubMenu('PvP');
+  //IsMenu := False;
+  //Mode := gm_pvp;
 end;
 
 procedure TGame.OnStartPvB;
@@ -842,6 +965,17 @@ procedure TGame.OnStartBvB;
 begin
   IsMenu := False;
   Mode := gm_bvb;
+end;
+
+procedure TGame.OnStartLocal;
+begin
+  IsMenu := False;
+  Mode := gm_pvp;
+end;
+
+procedure TGame.OnStartLAN;
+begin
+
 end;
 
 //TGame END

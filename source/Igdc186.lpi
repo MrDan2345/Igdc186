@@ -21,7 +21,7 @@
     <i18n>
       <EnableI18N LFM="False"/>
     </i18n>
-    <BuildModes Count="3" Active="Release">
+    <BuildModes Count="3" Active="Default">
       <Item1 Name="Default" Default="True"/>
       <Item2 Name="Debug">
         <CompilerOptions>
@@ -32,7 +32,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="C:\Workspace\g2mp\source;C:\Workspace\g2mp\source\box2d;C:\Workspace\g2mp\source\spine;source"/>
+            <OtherUnitFiles Value="g2mp\source;g2mp\source\box2d;g2mp\source\spine;source"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -62,11 +62,6 @@
               </Win32>
             </Options>
           </Linking>
-          <Other>
-            <ConfigFile>
-              <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
-            </ConfigFile>
-          </Other>
         </CompilerOptions>
       </Item2>
       <Item3 Name="Release">
@@ -93,17 +88,7 @@
               <RunWithoutDebug Value="True"/>
             </Debugging>
             <LinkSmart Value="True"/>
-            <Options>
-              <Win32>
-                <GraphicApplication Value="True"/>
-              </Win32>
-            </Options>
           </Linking>
-          <Other>
-            <ConfigFile>
-              <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
-            </ConfigFile>
-          </Other>
         </CompilerOptions>
       </Item3>
     </BuildModes>
@@ -120,8 +105,8 @@
       <Unit0>
         <Filename Value="Igdc186.lpr"/>
         <IsPartOfProject Value="True"/>
-        <CursorPos X="92" Y="15"/>
-        <UsageCount Value="44"/>
+        <CursorPos X="6" Y="12"/>
+        <UsageCount Value="60"/>
         <Loaded Value="True"/>
       </Unit0>
     </Units>
@@ -134,24 +119,14 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="C:\Workspace\g2mp\source;C:\Workspace\g2mp\source\box2d;C:\Workspace\g2mp\source\spine;source"/>
+      <OtherUnitFiles Value="g2mp\source;g2mp\source\box2d;g2mp\source\spine;source"/>
       <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Linking>
       <Debugging>
         <DebugInfoType Value="dsDwarf3"/>
       </Debugging>
-      <Options>
-        <Win32>
-          <GraphicApplication Value="True"/>
-        </Win32>
-      </Options>
     </Linking>
-    <Other>
-      <ConfigFile>
-        <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
-      </ConfigFile>
-    </Other>
   </CompilerOptions>
   <Debugging>
     <Exceptions Count="3">
