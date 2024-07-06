@@ -14,6 +14,7 @@
         <SaveFoldState Value="False"/>
         <CompatibilityMode Value="True"/>
       </Flags>
+      <SessionStorage Value="InProjectDir"/>
       <Title Value="Igdc186"/>
       <ResourceType Value="res"/>
       <UseXPManifest Value="True"/>
@@ -21,7 +22,7 @@
     <i18n>
       <EnableI18N LFM="False"/>
     </i18n>
-    <BuildModes Count="3" Active="Default">
+    <BuildModes Count="3">
       <Item1 Name="Default" Default="True"/>
       <Item2 Name="Debug">
         <CompilerOptions>
@@ -62,11 +63,6 @@
               </Win32>
             </Options>
           </Linking>
-          <Other>
-            <ConfigFile>
-              <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
-            </ConfigFile>
-          </Other>
         </CompilerOptions>
       </Item2>
       <Item3 Name="Release">
@@ -94,11 +90,6 @@
             </Debugging>
             <LinkSmart Value="True"/>
           </Linking>
-          <Other>
-            <ConfigFile>
-              <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
-            </ConfigFile>
-          </Other>
         </CompilerOptions>
       </Item3>
     </BuildModes>
@@ -115,10 +106,6 @@
       <Unit0>
         <Filename Value="Igdc186.lpr"/>
         <IsPartOfProject Value="True"/>
-        <IsVisibleTab Value="True"/>
-        <CursorPos X="50" Y="9"/>
-        <UsageCount Value="299"/>
-        <Loaded Value="True"/>
       </Unit0>
     </Units>
   </ProjectOptions>
@@ -138,22 +125,8 @@
         <DebugInfoType Value="dsDwarf3"/>
       </Debugging>
     </Linking>
-    <Other>
-      <ConfigFile>
-        <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
-      </ConfigFile>
-    </Other>
   </CompilerOptions>
   <Debugging>
-    <BreakPoints Count="1">
-      <Item1>
-        <Kind Value="bpkSource"/>
-        <WatchScope Value="wpsLocal"/>
-        <WatchKind Value="wpkWrite"/>
-        <Source Value="source\Network.pas"/>
-        <Line Value="202"/>
-      </Item1>
-    </BreakPoints>
     <Exceptions Count="3">
       <Item1>
         <Name Value="EAbort"/>

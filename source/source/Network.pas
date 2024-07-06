@@ -11,6 +11,7 @@ uses
   Sockets;
 
 type
+  {
   PAddrInfo = ^TAddrInfo;
   PPAddrInfo = ^PAddrInfo;
   TAddrInfo = record
@@ -32,6 +33,7 @@ type
     h_length: LongInt;
     h_addr_list: ^PAnsiChar;
   end;
+  }
 
   PPIfAddrs = ^PIfAddrs;
   PIfAddrs = ^TIfAddrs;
@@ -48,6 +50,7 @@ type
 const
   AI_PASSIVE = 1;
 
+{$if not defined(WINDOWS)}
 function GetIfAddrs(
   const IfAddrs: PPIfAddrs
 ): Int32; cdecl; external 'libc' name 'getifaddrs';
@@ -74,6 +77,7 @@ function GetHostByName(
 function PlatformLibOpen(Name: PAnsiChar; Flags: LongInt): TLibHandle; cdecl; external 'dl' name 'dlopen';
 function PlatformLibClose(Handle: TLibHandle): LongInt; cdecl; external 'dl' name 'dlclose';
 function PlatformLibAddress(Handle: TLibHandle; ProcName: PAnsiChar): Pointer; cdecl; external 'dl' name 'dlsym';
+{$endif}
 
 type TUNet = class
 public
@@ -81,16 +85,6 @@ public
   class function GetMyIP: TInAddr;
   class procedure Test;
 end;
-
-type TFreeAddrInfo = procedure (const AddrInfo: PAddrInfo); cdecl;
-type TGetAddrInfo = function (
-  const NodeName: PAnsiChar;
-  const ServName: PAnsiChar;
-  const Hints: PAddrInfo;
-  const AddrInfo: PPAddrInfo
-): Integer; cdecl;
-var ProcFreeAddrInfo: TFreeAddrInfo;
-var ProcGetAddrInfo: TGetAddrInfo;
 
 implementation
 
@@ -103,26 +97,35 @@ end;
 
 class function TUNet.GetMyIP: TInAddr;
 {$if defined(WINDOWS)}
+  type TInAddrArr = array[UInt32] of TInAddr;
+  type PInAddrArr = ^TInAddrArr;
   var AddrArr: PInAddrArr;
+  var Host: PHostEnt;
 {$else}
   var r: Int32;
   var IfAddrs, a: PIfAddrs;
 {$endif}
   var Addr: Sockets.TInAddr;
   var s: String;
+  var i: Int32;
 begin
   Result.s_addr := $00000000;
 {$if defined(WINDOWS)}
-  Host := GetHostByName(PAnsiChar(HostName));
+  Host := GetHostByName(PAnsiChar(GetMyName));
   if not Assigned(Host) then Exit;
   AddrArr := PInAddrArr(Host^.h_Addr_List^);
   i := 0;
   while AddrArr^[i].S_addr <> 0 do
-  begin
+  try
     Addr := Sockets.PInAddr(@AddrArr^[i].S_addr)^;
-    if Addr.s_bytes[1] = 192 then Result := Addr;
-    s := NetAddrToStr(Addr);
+    if (Result.s_addr = 0)
+    or (Addr.s_bytes[1] = 192) then
+    begin
+      Result := Addr;
+    end;
+    //s := NetAddrToStr(Addr);
     //WriteLn(s);
+  finally
     Inc(i);
   end;
 {$else}
@@ -134,8 +137,12 @@ begin
     if Assigned(a^.ifa_addr) then
     begin
       Addr := a^.ifa_addr^.sin_addr;
-      if Addr.s_bytes[1] = 192 then Result := Addr;
-      s := NetAddrToStr(Addr);
+      if (Result.s_addr = 0)
+      or (Addr.s_bytes[1] = 192) then
+      begin
+        Result := Addr;
+      end;
+      //s := NetAddrToStr(Addr);
       //WriteLn(s);
     end;
     a := a^.ifa_next;
@@ -145,6 +152,7 @@ begin
 end;
 
 class procedure TUNet.Test;
+  {
   type TInAddrArr = array[UInt32] of TInAddr;
   type PInAddrArr = ^TInAddrArr;
   var Hints: TAddrInfo;
@@ -160,7 +168,11 @@ class procedure TUNet.Test;
   var Addr: Sockets.TInAddr;
   var IfAddrs, a: PIfAddrs;
   //192.168.1.129
+  }
 begin
+  WriteLn(GetMyName);
+  WriteLn(NetAddrToStr(GetMyIP));
+{
   WriteLn(NetAddrToStr(GetMyIP));
   Exit;
   r := GetIfAddrs(@IfAddrs);
@@ -217,6 +229,7 @@ begin
   //ProcFreeAddrInfo(Info);
   FreeAddrInfo(Info);
   //PlatformLibClose(LibHandle);
+  }
 end;
 
 end.
