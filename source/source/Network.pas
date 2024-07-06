@@ -11,7 +11,7 @@ uses
   Sockets;
 
 type
-  {
+{$if not defined(WINDOWS)}
   PAddrInfo = ^TAddrInfo;
   PPAddrInfo = ^PAddrInfo;
   TAddrInfo = record
@@ -33,7 +33,7 @@ type
     h_length: LongInt;
     h_addr_list: ^PAnsiChar;
   end;
-  }
+{$endif}
 
   PPIfAddrs = ^PIfAddrs;
   PIfAddrs = ^TIfAddrs;
@@ -53,26 +53,26 @@ const
 {$if not defined(WINDOWS)}
 function GetIfAddrs(
   const IfAddrs: PPIfAddrs
-): Int32; cdecl; external 'libc' name 'getifaddrs';
+): Int32; cdecl; external 'c' name 'getifaddrs';
 procedure FreeIfAddrs(
   const IfaAdrs: PIfAddrs
-); cdecl; external 'libc' name 'freeifaddrs';
+); cdecl; external 'c' name 'freeifaddrs';
 function GetAddrInfo(
   const Node: PAnsiChar;
   const Service: PAnsiChar;
   const Hints: PAddrInfo;
   const Results: PPAddrInfo
-): Integer; cdecl; external 'libc' name 'getaddrinfo';
+): Integer; cdecl; external 'c' name 'getaddrinfo';
 procedure FreeAddrInfo(
   const AddrInfo: PAddrInfo
-); cdecl; external 'libc' name 'freeaddrinfo';
+); cdecl; external 'c' name 'freeaddrinfo';
 function GetHostName(
   const Name: PAnsiChar;
   const Len: Integer
-): Integer; external 'libc' name 'gethostname';
+): Integer; external 'c' name 'gethostname';
 function GetHostByName(
   const Name: PAnsiChar
-): PHostEnt; external 'libc' name 'gethostbyname';
+): PHostEnt; external 'c' name 'gethostbyname';
 
 function PlatformLibOpen(Name: PAnsiChar; Flags: LongInt): TLibHandle; cdecl; external 'dl' name 'dlopen';
 function PlatformLibClose(Handle: TLibHandle): LongInt; cdecl; external 'dl' name 'dlclose';
@@ -133,18 +133,17 @@ begin
   if r <> 0 then Exit;
   a := IfAddrs;
   while Assigned(a) do
-  begin
-    if Assigned(a^.ifa_addr) then
+  try
+    if not Assigned(a^.ifa_addr) then Continue;
+    Addr := a^.ifa_addr^.sin_addr;
+    if (Result.s_addr = 0)
+    or (Addr.s_bytes[1] = 192) then
     begin
-      Addr := a^.ifa_addr^.sin_addr;
-      if (Result.s_addr = 0)
-      or (Addr.s_bytes[1] = 192) then
-      begin
-        Result := Addr;
-      end;
-      //s := NetAddrToStr(Addr);
-      //WriteLn(s);
+      Result := Addr;
     end;
+    //s := NetAddrToStr(Addr);
+    //WriteLn(s);
+  finally
     a := a^.ifa_next;
   end;
   FreeIfAddrs(IfAddrs);
@@ -167,7 +166,6 @@ class procedure TUNet.Test;
   var AddrArr: PInAddrArr;
   var Addr: Sockets.TInAddr;
   var IfAddrs, a: PIfAddrs;
-  //192.168.1.129
   }
 begin
   WriteLn(GetMyName);
