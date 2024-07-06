@@ -18,8 +18,7 @@ uses
   Classes,
   SysUtils,
   box2d,
-  WinSock2,
-  Sockets;
+  Network;
 
 type TGridCell = record
   Bounce: Boolean;
@@ -92,7 +91,6 @@ type TAI = record
 end;
 
 type TLAN = record
-  HostAddresses: array of Sockets.TInAddr;
   Enabled: Boolean;
   procedure Setup;
   procedure Start;
@@ -673,6 +671,7 @@ begin
 end;
 
 procedure TLAN.Setup;
+{
   type TInAddrArr = array[UInt32] of TInAddr;
   type PInAddrArr = ^TInAddrArr;
   var Buffer: array[0..255] of AnsiChar;
@@ -681,8 +680,10 @@ procedure TLAN.Setup;
   var AddrArr: PInAddrArr;
   var Addr: Sockets.TInAddr;
   var i: Int32;
+}
 begin
   Enabled := False;
+  TUNet.Test;
   {
   GetHostName(@Buffer, SizeOf(Buffer));
   HostName := Buffer;
