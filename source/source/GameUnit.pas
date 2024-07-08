@@ -75,6 +75,7 @@ public
   function AddSubMenu(const SubMenuName: String): PSubMenu;
   function FindSubMenu(const SubMenuName: String): PSubMenu;
   function SetSubMenu(const SubMenuName: String = ''): Boolean;
+  function ClickAll(x, y: TG2Float): Boolean;
   procedure Setup;
   procedure RenderAll;
 end;
@@ -92,6 +93,7 @@ end;
 
 type TLAN = record
   Enabled: Boolean;
+  Net: TUNet;
   procedure Setup;
   procedure Start;
   procedure Stop;
@@ -531,6 +533,16 @@ begin
   Result := False;
 end;
 
+function TMenu.ClickAll(x, y: TG2Float): Boolean;
+begin
+  if CurSubMenu in [Low(SubMenus)..High(SubMenus)] then
+  begin
+    SubMenus[CurSubMenu].Click(x, y);
+    Exit;
+  end;
+  Click(x, y);
+end;
+
 procedure TMenu.Setup;
   var SubMenu: PSubMenu;
 begin
@@ -541,8 +553,8 @@ begin
   AddButton('Player vs AI', @Game.OnStartPvB);
   AddButton('AI vs AI', @Game.OnStartBvB);
   SubMenu := AddSubMenu('PvP');
-  SubMenu^.AddButton('LAN', @Game.OnStartLocal);
-  SubMenu^.AddButton('Local', @Game.OnStartLAN);
+  SubMenu^.AddButton('LAN', @Game.OnStartLAN);
+  SubMenu^.AddButton('Local', @Game.OnStartLocal);
   SubMenu := AddSubMenu('LAN');
 end;
 
@@ -683,7 +695,7 @@ procedure TLAN.Setup;
 }
 begin
   Enabled := False;
-  TUNet.Test;
+  //TUNet.Test;
   {
   GetHostName(@Buffer, SizeOf(Buffer));
   HostName := Buffer;
@@ -704,12 +716,17 @@ end;
 
 procedure TLAN.Start;
 begin
+  Net := TUNet.Run;
   Enabled := True;
 end;
 
 procedure TLAN.Stop;
 begin
   Enabled := False;
+  if not Assigned(Net) then Exit;
+  Net.Terminate;
+  Net.WaitFor;
+  FreeAndNil(Net);
 end;
 
 procedure TLAN.RenderMenu;
@@ -859,7 +876,7 @@ procedure TGame.MouseDown(const Button, x, y: Integer);
 begin
   if IsMenu then
   begin
-    Menu.Click(x, y);
+    Menu.ClickAll(x, y);
     Exit;
   end;
   if (Mode = gm_pvb)
@@ -976,7 +993,7 @@ end;
 
 procedure TGame.OnStartLAN;
 begin
-
+  LAN.Start;
 end;
 
 //TGame END

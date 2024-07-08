@@ -178,7 +178,7 @@ begin
     SearchThread.Addr := BaseIP;
     SearchThread.Port := Port;
     SearchThread.Counter := @n;
-    SetLength(SearchThreads, Length(SearchThreads));
+    SetLength(SearchThreads, Length(SearchThreads) + 1);
     SearchThreads[High(SearchThreads)] := SearchThread;
     InterlockedIncrement(n);
     SearchThread.Start;
@@ -205,6 +205,7 @@ begin
     ListenThread.Start;
     while not ListenThread.Finished do
     begin
+      if Terminated then ListenThread.Abort;
       Sleep(100);
     end;
     _Socket := ListenThread.Socket;
@@ -368,12 +369,26 @@ begin
 end;
 
 procedure TUNet.Execute;
+  var Buffer: array[0..1023] of UInt8;
+  var r: Int32;
 begin
   _Socket := -1;
-  while not Terminated do
+  while not Terminated
+  and not IsConnected do
   begin
     Search;
-
+    if not IsConnected then
+    begin
+      Listen;
+    end;
+  end;
+  while not Terminated do
+  begin
+    r := FpRecv(_Socket, @Buffer, SizeOf(Buffer), 0);
+  end;
+  if IsConnected then
+  begin
+    CloseSocket(_Socket);
   end;
 end;
 
