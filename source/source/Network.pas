@@ -8,7 +8,8 @@ uses
   WinSock2,
 {$elseif defined(UNIX)}
 {$endif}
-  Sockets;
+  Sockets,
+  Classes;
 
 type
 {$if not defined(WINDOWS)}
@@ -79,14 +80,143 @@ function PlatformLibClose(Handle: TLibHandle): LongInt; cdecl; external 'dl' nam
 function PlatformLibAddress(Handle: TLibHandle; ProcName: PAnsiChar): Pointer; cdecl; external 'dl' name 'dlsym';
 {$endif}
 
-type TUNet = class
+type TUNet = class (TThread)
+private
+  var _Port: UInt16;
+  var _Socket: Int32;
+  procedure Search;
+  procedure Listen;
+  function GetIsConnected: Boolean;
 public
+  property Port: UInt16 read _Port write _Port;
+  property IsConnected: Boolean read GetIsConnected;
   class function GetMyName: String;
   class function GetMyIP: TInAddr;
+  class function Run(const APort: UInt16 = 6667): TUNet;
   class procedure Test;
+  procedure Execute; override;
 end;
 
 implementation
+
+type TSearchThread = class (TThread)
+public
+  var Socket: Int32;
+  var Addr: TInAddr;
+  var Port: UInt16;
+  var Counter: PInt32;
+  procedure Execute; override;
+end;
+
+procedure TSearchThread.Execute;
+  var SockAddr: TInetSockAddr;
+begin
+  Socket := FpSocket(AF_INET, SOCK_STREAM, 0);
+  SockAddr.sin_family := AF_INET;
+  SockAddr.sin_addr := Addr;
+  SockAddr.sin_port := htons(Port);
+  try
+    if FpConnect(Socket, @SockAddr, SizeOf(SockAddr)) = 0 then Exit;
+    CloseSocket(Socket);
+    Socket := -1;
+  finally
+    InterlockedDecrement(Counter^);
+  end;
+end;
+
+type TListenThread = class (TThread)
+public
+  var ListenSocket: Int32;
+  var Socket: Int32;
+  var Port: UInt16;
+  procedure Execute; override;
+  procedure Abort;
+end;
+procedure TListenThread.Execute;
+  var SockAddr, ClientAddr: TInetSockAddr;
+  var n: Int32;
+begin
+  ListenSocket := FpSocket(AF_INET, SOCK_STREAM, 0);
+  try
+    SockAddr.sin_family := AF_INET;
+    SockAddr.sin_port := htons(Port);
+    SockAddr.sin_addr := StrToNetAddr('0.0.0.0');
+    n := SizeOf(SockAddr);
+    if FpBind(ListenSocket, @SockAddr, n) <> 0 then Exit;
+    if FpListen(ListenSocket, 8) <> 0 then Exit;
+    n := SizeOf(ClientAddr);
+    ClientAddr := Default(TInetSockAddr);
+    Socket := FpAccept(ListenSocket, @ClientAddr, @n);
+    WriteLn(NetAddrToStr(ClientAddr.sin_addr));
+  finally
+    CloseSocket(ListenSocket);
+    ListenSocket := -1;
+  end;
+end;
+procedure TListenThread.Abort;
+begin
+  CloseSocket(ListenSocket);
+end;
+
+procedure TUNet.Search;
+  var BaseIP: TInAddr;
+  var i, n: Int32;
+  var SearchThread: TSearchThread;
+  var SearchThreads: array of TSearchThread;
+begin
+  BaseIP := GetMyIP;
+  if BaseIP.s_addr = 0 then
+  begin
+    BaseIP := StrToHostAddr('127.0.0.1');
+    Exit;
+  end;
+  SearchThreads := nil;
+  for i := 1 to 255 do
+  begin
+    BaseIP.s_bytes[4] := i;
+    SearchThread := TSearchThread.Create(True);
+    SearchThread.Addr := BaseIP;
+    SearchThread.Port := Port;
+    SearchThread.Counter := @n;
+    SetLength(SearchThreads, Length(SearchThreads));
+    SearchThreads[High(SearchThreads)] := SearchThread;
+    InterlockedIncrement(n);
+    SearchThread.Start;
+  end;
+  while n > 0 do Sleep(100);
+  for i := 0 to High(SearchThreads) do
+  begin
+    if (_Socket = -1)
+    and (SearchThreads[i].Socket > -1) then
+    begin
+      _Socket := SearchThreads[i].Socket;
+      WriteLn(NetAddrToStr(SearchThreads[i].Addr));
+    end;
+    SearchThreads[i].Free;
+  end;
+end;
+
+procedure TUNet.Listen;
+  var ListenThread: TListenThread;
+begin
+  ListenThread := TListenThread.Create(True);
+  try
+    ListenThread.Port := Port;
+    ListenThread.Start;
+    while not ListenThread.Finished do
+    begin
+      Sleep(100);
+    end;
+    _Socket := ListenThread.Socket;
+  finally
+    ListenThread.Free;
+  end;
+end;
+
+function TUNet.GetIsConnected: Boolean;
+begin
+  Result := _Socket > -1;
+end;
 
 class function TUNet.GetMyName: String;
   var Buffer: array[0..255] of AnsiChar;
@@ -109,7 +239,7 @@ class function TUNet.GetMyIP: TInAddr;
   var s: String;
   var i: Int32;
 begin
-  Result.s_addr := $00000000;
+  Result.s_addr := 0;
 {$if defined(WINDOWS)}
   Host := GetHostByName(PAnsiChar(GetMyName));
   if not Assigned(Host) then Exit;
@@ -148,6 +278,13 @@ begin
   end;
   FreeIfAddrs(IfAddrs);
 {$endif}
+end;
+
+class function TUNet.Run(const APort: UInt16): TUNet;
+begin
+  Result := TUNet.Create(True);
+  Result.Port := APort;
+  Result.Start;
 end;
 
 class procedure TUNet.Test;
@@ -228,6 +365,16 @@ begin
   FreeAddrInfo(Info);
   //PlatformLibClose(LibHandle);
   }
+end;
+
+procedure TUNet.Execute;
+begin
+  _Socket := -1;
+  while not Terminated do
+  begin
+    Search;
+
+  end;
 end;
 
 end.
