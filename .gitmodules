@@ -1,3 +1,6 @@
 [submodule "source/g2mp"]
 	path = source/g2mp
 	url = git@github.com:MrDan2345/g2mp.git
+[submodule "source/PasUtils"]
+	path = source/PasUtils
+	url = git@github.com:MrDan2345/PasUtils.git

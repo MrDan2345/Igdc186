@@ -9,7 +9,8 @@ uses
 {$elseif defined(UNIX)}
 {$endif}
   Sockets,
-  Classes;
+  Classes,
+  CommonUtils;
 
 type
 {$if not defined(WINDOWS)}
@@ -84,6 +85,9 @@ type TUNet = class (TThread)
 private
   var _Port: UInt16;
   var _Socket: Int32;
+  var _Lock: TUCriticalSection;
+  var _Messages: array of String;
+  function Discovery: TInAddr;
   procedure Search;
   procedure Listen;
   function GetIsConnected: Boolean;
@@ -94,7 +98,10 @@ public
   class function GetMyIP: TInAddr;
   class function Run(const APort: UInt16 = 6667): TUNet;
   class procedure Test;
+  procedure AfterConstruction; override;
   procedure Execute; override;
+  procedure Send(const Msg: String);
+  function Receive: TStringArray;
 end;
 
 implementation
@@ -120,6 +127,7 @@ begin
     CloseSocket(Socket);
     Socket := -1;
   finally
+    WriteLn(NetAddrToStr(Addr));
     InterlockedDecrement(Counter^);
   end;
 end;
@@ -129,6 +137,7 @@ public
   var ListenSocket: Int32;
   var Socket: Int32;
   var Port: UInt16;
+  var Addr: TInAddr;
   procedure Execute; override;
   procedure Abort;
 end;
@@ -147,7 +156,8 @@ begin
     n := SizeOf(ClientAddr);
     ClientAddr := Default(TInetSockAddr);
     Socket := FpAccept(ListenSocket, @ClientAddr, @n);
-    WriteLn(NetAddrToStr(ClientAddr.sin_addr));
+    Addr := ClientAddr.sin_addr;
+    WriteLn(NetAddrToStr(Addr));
   finally
     CloseSocket(ListenSocket);
     ListenSocket := -1;
@@ -158,41 +168,104 @@ begin
   CloseSocket(ListenSocket);
 end;
 
-procedure TUNet.Search;
-  var BaseIP: TInAddr;
-  var i, n: Int32;
-  var SearchThread: TSearchThread;
-  var SearchThreads: array of TSearchThread;
-begin
-  BaseIP := GetMyIP;
-  if BaseIP.s_addr = 0 then
+function TUNet.Discovery: TInAddr;
+  var Addresses: array of TInAddr;
+  procedure AddAddr(Addr: TInAddr);
+    var i: Int32;
   begin
-    BaseIP := StrToHostAddr('127.0.0.1');
-    Exit;
+    i := Length(Addresses);
+    SetLength(Addresses, i + 1);
+    Addresses[i] := Addr;
   end;
-  SearchThreads := nil;
+  var Socket: Int32;
+  var SockAddr: TInetSockAddr;
+  var Addr: TInAddr;
+  var i: Int32;
+begin
+  {Result.s_addr := 0;
+  Addresses := nil;
+  //AddAddr(StrToNetAddr('127.0.0.1'));
+  Addr := GetMyIP;
+  if Addr.s_addr <> 0 then
   for i := 1 to 255 do
   begin
-    BaseIP.s_bytes[4] := i;
+    if i = Addr.s_bytes[4] then Continue;
+    Addr.s_bytes[4] := i;
+    AddAddr(Addr);
+  end;
+  Socket := FpSocket(AF_INET, SOCK_DGRAM, 0);
+  SockAddr.sin_family := AF_INET;
+  SockAddr.sin_port := htons(Port);
+  SockAddr.sin_addr := StrToNetAddr('0.0.0.0');
+  n := SizeOf(SockAddr);
+  if FpBind(Socket, @SockAddr, n) <> 0 then Exit;
+  while Result.s_addr = 0 do
+  begin
+
+  end;
+  CloseSocket(Socket);
+  }
+  Result := Default(TInAddr);
+end;
+
+procedure TUNet.Search;
+  var Addresses: array of TInAddr;
+  procedure AddAddr(Addr: TInAddr);
+    var i: Int32;
+  begin
+    i := Length(Addresses);
+    SetLength(Addresses, i + 1);
+    Addresses[i] := Addr;
+  end;
+  var BaseIP, Addr: TInAddr;
+  var i, j, n: Int32;
+  var SearchThread: TSearchThread;
+  var SearchThreads: array of TSearchThread;
+  const SimThreads = 256;
+begin
+  Addresses := nil;
+  AddAddr(StrToNetAddr('127.0.0.1'));
+  BaseIP := GetMyIP;
+  Addr := BaseIP;
+  if BaseIP.s_addr <> 0 then
+  for i := 1 to 255 do
+  begin
+    if i = BaseIP.s_bytes[4] then Continue;
+    Addr.s_bytes[4] := i;
+    AddAddr(Addr);
+  end;
+  SearchThreads := nil;
+  n := 0;
+  for i := 0 to High(Addresses) do
+  begin
+    Addr := Addresses[i];
     SearchThread := TSearchThread.Create(True);
-    SearchThread.Addr := BaseIP;
+    SearchThread.Addr := Addr;
     SearchThread.Port := Port;
     SearchThread.Counter := @n;
     SetLength(SearchThreads, Length(SearchThreads) + 1);
     SearchThreads[High(SearchThreads)] := SearchThread;
-    InterlockedIncrement(n);
-    SearchThread.Start;
-  end;
-  while n > 0 do Sleep(100);
-  for i := 0 to High(SearchThreads) do
-  begin
-    if (_Socket = -1)
-    and (SearchThreads[i].Socket > -1) then
+    Inc(n);
+    if (i < High(Addresses)) and (n < SimThreads) then Continue;
+    for j := 0 to High(SearchThreads) do
     begin
-      _Socket := SearchThreads[i].Socket;
-      WriteLn(NetAddrToStr(SearchThreads[i].Addr));
+      SearchThreads[j].Start;
     end;
-    SearchThreads[i].Free;
+    while n > 0 do Sleep(100);
+    for j := 0 to High(SearchThreads) do
+    begin
+      SearchThread := SearchThreads[j];
+      if (_Socket = -1)
+      and (SearchThread.Socket > -1) then
+      begin
+        _Socket := SearchThread.Socket;
+        WriteLn(NetAddrToStr(SearchThread.Addr));
+      end;
+      SearchThread.Free;
+    end;
+    SearchThreads := nil;
+    n := 0;
+    if _Socket > -1 then Break;
   end;
 end;
 
@@ -308,69 +381,19 @@ class procedure TUNet.Test;
 begin
   WriteLn(GetMyName);
   WriteLn(NetAddrToStr(GetMyIP));
-{
-  WriteLn(NetAddrToStr(GetMyIP));
-  Exit;
-  r := GetIfAddrs(@IfAddrs);
-  if r <> 0 then Exit;
-  a := IfAddrs;
-  while Assigned(a) do
-  begin
-    if Assigned(a^.ifa_addr) then
-    begin
-      WriteLn(NetAddrToStr(a^.ifa_addr^.sin_addr));
-    end;
-    a := a^.ifa_next;
-  end;
-  FreeIfAddrs(IfAddrs);
-  Exit;
-  GetHostName(@Buffer, SizeOf(Buffer));
-  HostName := Buffer;
-  WriteLn(HostName);
-  HostEnt := GetHostByName(PAnsiChar(HostName));
-  AddrArr := PInAddrArr(HostEnt^.h_Addr_List^);
-  i := 0;
-  while AddrArr^[i].S_addr <> 0 do
-  begin
-    Addr := Sockets.PInAddr(@AddrArr^[i].S_addr)^;
-    //specialize UArrAppend<Sockets.TInAddr>(_Addresses, Addr);
-    s := NetAddrToStr(Addr);
-    WriteLn(s);
-    Inc(i);
-  end;
-  //LibHandle := PlatformLibOpen('libc.so.6', 1);
-  //ProcFreeAddrInfo := TFreeAddrInfo(PlatformLibAddress(LibHandle, 'freeaddrinfo'));
-  //ProcGetAddrInfo := TGetAddrInfo(PlatformLibAddress(LibHandle, 'getaddrinfo'));
-  FillChar(Hints, SizeOf(Hints), 0);
-  Hints.ai_family := AF_UNSPEC;
-  Hints.ai_socktype := SOCK_STREAM;
-  //Hints.ai_flags := AI_PASSIVE;
-  //r := ProcGetAddrInfo('www.example.net', '3490', @Hints, @Info);
-  //WriteLn(r);
-  r := GetAddrInfo(PAnsiChar(HostName), nil, @Hints, @Info);
-  if r <> 0 then Exit;
-  p := Info;
-  while (Assigned(p)) do
-  begin
-    if p^.ai_family = AF_INET then
-    begin
-      WriteLn(NetAddrToStr(p^.ai_addr^.sin_addr));
-    end
-    else
-    begin
-      WriteLn('ip6 address');
-    end;
-    p := p^.ai_next;
-  end;
-  //ProcFreeAddrInfo(Info);
-  FreeAddrInfo(Info);
-  //PlatformLibClose(LibHandle);
-  }
+end;
+
+procedure TUNet.AfterConstruction;
+begin
+  inherited AfterConstruction;
+  _Socket := -1;
 end;
 
 procedure TUNet.Execute;
   var Buffer: array[0..1023] of UInt8;
-  var r: Int32;
+  var Received: array of UInt8;
+  var r, i: Int32;
+  var s: String;
 begin
   _Socket := -1;
   while not Terminated
@@ -382,13 +405,76 @@ begin
       Listen;
     end;
   end;
+  Received := nil;
   while not Terminated do
   begin
     r := FpRecv(_Socket, @Buffer, SizeOf(Buffer), 0);
+    if r <= 0 then
+    begin
+      Terminate;
+      Break;
+    end;
+    i := Length(Received);
+    SetLength(Received, i + r);
+    Move(Buffer, Received[i], r);
+    _Lock.Enter;
+    try
+      i := 0;
+      while i < Length(Received) do
+      begin
+        if Received[i] = 0 then
+        begin
+          s := '';
+          if i > 0 then
+          begin
+            SetLength(s, i);
+            Move(Received[0], s[1], i);
+          end;
+          r := Length(Received) - (i + 1);
+          Move(Received[i + 1], Received[0], r);
+          SetLength(Received, r);
+          SetLength(_Messages, Length(_Messages) + 1);
+          _Messages[High(_Messages)] := s;
+          WriteLn(s);
+          i := -1;
+        end;
+        Inc(i);
+      end;
+    finally
+      _Lock.Leave;
+    end;
   end;
   if IsConnected then
   begin
     CloseSocket(_Socket);
+  end;
+end;
+
+procedure TUNet.Send(const Msg: String);
+  var i: Int32;
+begin
+  if not IsConnected then Exit;
+  i := 1;
+  while i < Length(Msg) + 1 do
+  begin
+    i += FpSend(_Socket, @Msg[i], Length(Msg) + 2 - i, 0);
+  end;
+end;
+
+function TUNet.Receive: TStringArray;
+  var i: Int32;
+begin
+  _Lock.Enter;
+  try
+    if Length(_Messages) = 0 then Exit(nil);
+    SetLength(Result, Length(_Messages));
+    for i := 0 to High(_Messages) do
+    begin
+      Result[i] := _Messages[i];
+    end;
+    _Messages := nil;
+  finally
+    _Lock.Leave;
   end;
 end;
 

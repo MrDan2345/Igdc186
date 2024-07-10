@@ -18,7 +18,8 @@ uses
   Classes,
   SysUtils,
   box2d,
-  Network;
+  Network,
+  CommonUtils;
 
 type TGridCell = record
   Bounce: Boolean;
@@ -27,6 +28,7 @@ end;
 
 type TPlayer = record
   Score: Int32;
+  Name: String;
 end;
 
 type TMove = record
@@ -80,7 +82,7 @@ public
   procedure RenderAll;
 end;
 
-type TGameMode = (gm_pvp, gm_pvb, gm_bvb);
+type TGameMode = (gm_pvp, gm_pvb, gm_bvb, gm_pvn);
 
 type TAI = record
   UpdateTime: TG2Float;
@@ -91,13 +93,22 @@ type TAI = record
   procedure DebugDraw;
 end;
 
+type TNetState = (ns_idle, ns_connect, ns_init, ns_play);
+
 type TLAN = record
-  Enabled: Boolean;
   Net: TUNet;
+  State: TNetState;
+  Dice: Int32;
+  LocalPlayer: Int32;
+  function OtherPlayer: Int32;
+  function IsEnabled: Boolean;
+  function MyName: String;
   procedure Setup;
   procedure Start;
   procedure Stop;
+  procedure Update;
   procedure RenderMenu;
+  procedure Action(const Pos: TPoint);
 end;
 
 type TGame = class
@@ -119,6 +130,8 @@ public
   var LAN: TLAN;
   constructor Create;
   destructor Destroy; override;
+  function IsPlayerMove: Boolean;
+  function IsAIMove: Boolean;
   procedure Initialize;
   procedure Finalize;
   procedure Update;
@@ -388,13 +401,21 @@ procedure TGrid.Draw;
       );
     end;
   end;
+  function IsMyMove: Boolean;
+  begin
+    case Game.Mode of
+      gm_pvp: Exit(True);
+      gm_bvb: Exit(False);
+      gm_pvb: Exit(Game.CurPlayer = 0);
+      gm_pvn: Exit(Game.CurPlayer = Game.LAN.LocalPlayer);
+    end;
+  end;
 begin
   DrawField;
   DrawLining;
   DrawBorder;
   DrawMoves;
-  if ((Game.Mode <> gm_pvb) or (Game.CurPlayer = 0))
-  and (Game.Mode <> gm_bvb) then
+  if IsMyMove then
   begin
     DrawNextMove;
   end;
@@ -490,7 +511,7 @@ begin
   y := (g2.Params.Height - (dy * Length(Buttons))) * 0.5;
   for i := 0 to High(Buttons) do
   begin
-    if hov = i then c := $ffffffff else c := $ffa0a0a0;
+    if (hov = i) and Assigned(Buttons[i].Action) then c := $ffffffff else c := $ffa0a0a0;
     s := Buttons[i].Caption;
     Game.Font1.Print(
       (g2.Params.Width - Game.Font1.TextWidth(s)) * 0.5,
@@ -556,6 +577,7 @@ begin
   SubMenu^.AddButton('LAN', @Game.OnStartLAN);
   SubMenu^.AddButton('Local', @Game.OnStartLocal);
   SubMenu := AddSubMenu('LAN');
+  SubMenu^.AddButton('Searching...', nil);
 end;
 
 procedure TMenu.RenderAll;
@@ -682,56 +704,143 @@ begin
   end;
 end;
 
-procedure TLAN.Setup;
-{
-  type TInAddrArr = array[UInt32] of TInAddr;
-  type PInAddrArr = ^TInAddrArr;
-  var Buffer: array[0..255] of AnsiChar;
-  var HostName, s: String;
-  var Host: PHostEnt;
-  var AddrArr: PInAddrArr;
-  var Addr: Sockets.TInAddr;
-  var i: Int32;
-}
+function TLAN.OtherPlayer: Int32;
 begin
-  Enabled := False;
-  //TUNet.Test;
-  {
-  GetHostName(@Buffer, SizeOf(Buffer));
-  HostName := Buffer;
-  Host := GetHostByName(PAnsiChar(HostName));
-  if not Assigned(Host) then Exit;
-  AddrArr := PInAddrArr(Host^.h_Addr_List^);
-  i := 0;
-  while AddrArr^[i].S_addr <> 0 do
-  begin
-    Addr := Sockets.PInAddr(@AddrArr^[i].S_addr)^;
-    //specialize UArrAppend<Sockets.TInAddr>(_Addresses, Addr);
-    s := NetAddrToStr(Addr);
-    WriteLn(s);
-    Inc(i);
-  end;
-  }
+  if LocalPlayer = -1 then Exit(-1);
+  Result := (LocalPlayer + 1) mod 2;
+end;
+
+function TLAN.IsEnabled: Boolean;
+begin
+  Result := State <> ns_idle;
+end;
+
+function TLAN.MyName: String;
+begin
+  Result := TUNet.GetMyName;
+  if Length(Result) = 0 then Result := 'Player';
+end;
+
+procedure TLAN.Setup;
+begin
+  State := ns_idle;
 end;
 
 procedure TLAN.Start;
 begin
+  LocalPlayer := -1;
+  Dice := -1;
+  State := ns_connect;
   Net := TUNet.Run;
-  Enabled := True;
 end;
 
 procedure TLAN.Stop;
 begin
-  Enabled := False;
+  State := ns_idle;
   if not Assigned(Net) then Exit;
   Net.Terminate;
   Net.WaitFor;
   FreeAndNil(Net);
 end;
 
+procedure TLAN.Update;
+  procedure ThrowDice;
+    var Json: TUJsonRef;
+  begin
+    Dice := Random(1000000);
+    Json := TUJson.Make;
+    Json.Ptr.AddValue('dice', 'id');
+    Json.Ptr.AddValue(Dice, 'dice');
+    Net.Send(Json.Ptr.ToString);
+  end;
+  procedure Aquaint;
+    var Json: TUJsonRef;
+  begin
+    Json := TUJson.Make;
+    Json.Ptr.AddValue('name', 'id');
+    Json.Ptr.AddValue(MyName, 'name');
+    Net.Send(Json.Ptr.ToString);
+  end;
+  var Json: TUJsonRef;
+  var m: TStringArray;
+  var s: String;
+  var i, OtherDice, x, y: Int32;
+begin
+  case State of
+    ns_connect:
+    begin
+      if Net.IsConnected then
+      begin
+        ThrowDice;
+        State := ns_init;
+      end;
+    end;
+    ns_init:
+    begin
+      m := Net.Receive;
+      if Length(m) > 0 then
+      for i := 0 to High(m) do
+      begin
+        Json := TUJson.Load(m[i]);
+        if LocalPlayer = -1 then
+        begin
+          if Json.Ptr['id'].Value = 'dice' then
+          begin
+            OtherDice := Json.Ptr['dice'].ValueAsInt;
+            if OtherDice = Dice then ThrowDice
+            else
+            begin
+              if Dice > OtherDice then LocalPlayer := 0 else LocalPlayer := 1;
+              Aquaint;
+            end;
+          end;
+        end
+        else
+        begin
+          if Json.Ptr['id'].Value = 'name' then
+          begin
+            Game.Players[LocalPlayer].Name := MyName;
+            Game.Players[OtherPlayer].Name := Json.Ptr['name'].Value;
+            Game.Mode := gm_pvn;
+            Game.IsMenu := False;
+            Game.CurPlayer := 0;
+            State := ns_play;
+          end;
+        end;
+      end;
+    end;
+    ns_play:
+    begin
+      m := Net.Receive;
+      if Length(m) > 0 then
+      for i := 0 to High(m) do
+      begin
+        Json := TUJson.Load(m[i]);
+        if Json.Ptr['id'].Value = 'move' then
+        begin
+          x := Json.Ptr['x'].ValueAsInt;
+          y := Json.Ptr['y'].ValueAsInt;
+          Game.OnAction(Game.Grid.ActionAt(Point(x, y)));
+        end;
+      end;
+    end;
+  end;
+end;
+
 procedure TLAN.RenderMenu;
 begin
 
+end;
+
+procedure TLAN.Action(const Pos: TPoint);
+  var Json: TUJsonRef;
+begin
+  if not IsEnabled then Exit;
+  Json := TUJson.Make;
+  Json.Ptr.AddValue('move', 'id');
+  Json.Ptr.AddValue(Pos.x, 'x');
+  Json.Ptr.AddValue(Pos.y, 'y');
+  Net.Send(Json.Ptr.ToString);
 end;
 
 //TGame BEGIN
@@ -768,6 +877,26 @@ begin
   g2.CallbackScrollRemove(@Scroll);
   g2.CallbackPrintRemove(@Print);
   inherited Destroy;
+end;
+
+function TGame.IsPlayerMove: Boolean;
+begin
+  case Mode of
+    gm_pvp: Exit(True);
+    gm_bvb: Exit(True);
+    gm_pvb: Exit(CurPlayer = 0);
+    gm_pvn: Exit(CurPlayer = LAN.LocalPlayer);
+    else Exit(False);
+  end;
+end;
+
+function TGame.IsAIMove: Boolean;
+begin
+  case Mode of
+    gm_bvb: Exit(True);
+    gm_pvb: Exit(CurPlayer = 1);
+    else Exit(False);
+  end;
 end;
 
 procedure TGame.Initialize;
@@ -812,7 +941,8 @@ begin
     end;
     Exit;
   end;
-  if ((Mode = gm_pvb) and (CurPlayer = 1)) or (Mode = gm_bvb) then
+  if LAN.IsEnabled then LAN.Update;
+  if IsAIMove then
   begin
     OnAction(AI.Update);
   end;
@@ -827,7 +957,7 @@ begin
   if IsMenu then
   begin
     Menu.RenderAll;
-    if LAN.Enabled then LAN.RenderMenu;
+    if LAN.IsEnabled then LAN.RenderMenu;
     Exit;
   end;
   g2.Clear($ffa0a0a0);
@@ -836,12 +966,12 @@ begin
   //if Mode = gm_pvb then AI.DebugDraw;
   for i := 0 to High(Players) do
   begin
-    s := 'Player ' + IntToStr(i + 1) + ': ' + IntToStr(Players[i].Score);
+    s := Players[i].Name + ': ' + IntToStr(Players[i].Score);
     if i = 0 then x := g2.Params.Width * 0.05
     else x := g2.Params.Width - Font1.TextWidth(s) - g2.Params.Width * 0.05;
     Font1.Print(x, 0, 1, 1, PlayerColors[i], s, bmNormal, tfPoint);
   end;
-  s := 'Player ' + IntToStr(CurPlayer + 1);
+  s := Players[CurPlayer].Name;
   Font1.Print(
     (g2.Params.Width - Font1.TextWidth(s)) * 0.5, 0,
     1, 1, PlayerColors[CurPlayer], s, bmNormal, tfPoint
@@ -879,9 +1009,11 @@ begin
     Menu.ClickAll(x, y);
     Exit;
   end;
-  if (Mode = gm_pvb)
-  and (CurPlayer = 1) then Exit;
-  OnAction(Grid.Action);
+  if IsPlayerMove then
+  begin
+    if LAN.State = ns_play then LAN.Action(Grid.CurPos);
+    OnAction(Grid.Action);
+  end;
 end;
 
 procedure TGame.MouseUp(const Button, x, y: Integer);
@@ -930,7 +1062,7 @@ end;
 procedure TGame.SwapPlayers;
 begin
   CurPlayer := (CurPlayer + 1) mod 2;
-  ShowMessage('Player ' + IntToStr(CurPlayer + 1) + ' turn', 1);
+  ShowMessage(Players[CurPlayer].Name + ' turn', 1);
 end;
 
 procedure TGame.OnAction(const Swap: Boolean);
@@ -960,7 +1092,7 @@ begin
     end;
     Exit;
   end;
-  ShowMessage('Player ' + IntToStr(w + 1) + ' wins!');
+  ShowMessage(Players[w].Name + ' wins!');
   Inc(Players[w].Score);
   EndDelay := 1;
   //Grid.Setup;
@@ -974,26 +1106,38 @@ begin
 end;
 
 procedure TGame.OnStartPvB;
+  var s: String;
 begin
   IsMenu := False;
   Mode := gm_pvb;
+  Players[0].Name := 'Player';
+  Players[1].Name := 'Bot';
+  s := TUNet.GetMyName;
+  if Length(s) > 0 then Players[0].Name := s;
 end;
 
 procedure TGame.OnStartBvB;
 begin
   IsMenu := False;
   Mode := gm_bvb;
+  Players[0].Name := 'Bot 1';
+  Players[1].Name := 'Bot 2';
 end;
 
 procedure TGame.OnStartLocal;
 begin
   IsMenu := False;
   Mode := gm_pvp;
+  Players[0].Name := 'Player 1';
+  Players[1].Name := 'Player 2';
 end;
 
 procedure TGame.OnStartLAN;
 begin
+  Players[0].Name := 'Player 1';
+  Players[1].Name := 'Player 2';
   LAN.Start;
+  Menu.SetSubMenu('LAN');
 end;
 
 //TGame END
