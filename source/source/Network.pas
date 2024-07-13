@@ -81,18 +81,21 @@ function PlatformLibClose(Handle: TLibHandle): LongInt; cdecl; external 'dl' nam
 function PlatformLibAddress(Handle: TLibHandle; ProcName: PAnsiChar): Pointer; cdecl; external 'dl' name 'dlsym';
 {$endif}
 
+type TUNetStatus = (ns_idle, ns_connecting, ns_connected);
+
 type TUNet = class (TThread)
 private
+  var _Status: TUNetStatus;
   var _Port: UInt16;
   var _Socket: Int32;
   var _Lock: TUCriticalSection;
   var _Messages: array of String;
   function Loopback: Boolean;
-  function Discovery: TInAddr;
   function Connect(const Addr: TInAddr): Boolean;
   function ReceiveMessages: Int32;
   function GetIsConnected: Boolean;
 public
+  property Status: TUNetStatus read _Status write _Status;
   property Port: UInt16 read _Port write _Port;
   property IsConnected: Boolean read GetIsConnected;
   class function GetMyName: String;
@@ -158,6 +161,7 @@ begin
     n := SizeOf(ClientAddr);
     ClientAddr := Default(TInetSockAddr);
     Socket := FpAccept(ListenSocket, @ClientAddr, @n);
+    if Socket < 0 then Exit;
     Addr := ClientAddr.sin_addr;
     WriteLn(NetAddrToStr(Addr));
   finally
@@ -201,8 +205,8 @@ begin
     begin
       n := SizeOf(OtherAddr);
       r := FpRecvFrom(ListenSocket, @Buffer, SizeOf(Buffer), 0, @OtherAddr, @n);
-      if r <> SizeOf(BeaconId) then Continue;
-      if Buffer <> BeaconId then Continue;
+      if Buffer <> BeaconId then Break;
+      WriteLn('Beacon: ', NetAddrToStr(OtherAddr.sin_addr));
       Address := OtherAddr.sin_addr;
       Break;
     end;
@@ -214,6 +218,7 @@ end;
 procedure TBeaconThread.Abort;
 begin
   Terminate;
+  FpShutDown(ListenSocket, SHUT_RDWR);
   CloseSocket(ListenSocket);
 end;
 
@@ -244,45 +249,6 @@ function TUNet.Loopback: Boolean;
 begin
   Addr := StrToNetAddr('127.0.0.1');
   Result := Connect(Addr);
-end;
-
-function TUNet.Discovery: TInAddr;
-  var Addresses: array of TInAddr;
-  procedure AddAddr(Addr: TInAddr);
-    var i: Int32;
-  begin
-    i := Length(Addresses);
-    SetLength(Addresses, i + 1);
-    Addresses[i] := Addr;
-  end;
-  var Socket: Int32;
-  var SockAddr: TInetSockAddr;
-  var Addr: TInAddr;
-  var i, n: Int32;
-begin
-  Result.s_addr := 0;
-  Addresses := nil;
-  //AddAddr(StrToNetAddr('127.0.0.1'));
-  Addr := GetMyIP;
-  if Addr.s_addr <> 0 then
-  for i := 1 to 255 do
-  begin
-    if i = Addr.s_bytes[4] then Continue;
-    Addr.s_bytes[4] := i;
-    AddAddr(Addr);
-  end;
-  Socket := FpSocket(AF_INET, SOCK_DGRAM, 0);
-  SockAddr.sin_family := AF_INET;
-  SockAddr.sin_port := htons(Port);
-  SockAddr.sin_addr := StrToNetAddr('0.0.0.0');
-  n := SizeOf(SockAddr);
-  if FpBind(Socket, @SockAddr, n) <> 0 then Exit;
-  while Result.s_addr = 0 do
-  begin
-
-  end;
-  CloseSocket(Socket);
-  Result := Default(TInAddr);
 end;
 
 function TUNet.Connect(const Addr: TInAddr): Boolean;
@@ -446,6 +412,7 @@ procedure TUNet.AfterConstruction;
 begin
   inherited AfterConstruction;
   _Socket := -1;
+  _Status := ns_idle;
 end;
 
 procedure TUNet.Execute;
@@ -466,7 +433,7 @@ procedure TUNet.Execute;
     try
       while True do
       begin
-        Beacon.Broadcast;
+        //Beacon.Broadcast;
         if Listen.Finished then
         begin
           _Socket := Listen.Socket;
@@ -488,22 +455,33 @@ procedure TUNet.Execute;
         Sleep(2000);
       end;
     finally
+      WriteLn('Socket: ', _Socket);
+      WriteLn('Finished connecting');
       Beacon.Abort;
+      WriteLn('Beacon.Abort');
       Beacon.WaitFor;
+      WriteLn('Beacon.WaitFor');
       Beacon.Free;
+      WriteLn('Beacon.Free');
       Listen.Abort;
+      WriteLn('Listen.Abort');
       Listen.WaitFor;
+      WriteLn('Listen.WaitFor');
       Listen.Free;
+      WriteLn('Listen.Free');
     end;
   end;
 begin
   _Socket := -1;
-  while not Terminated do
+  _Status := ns_connecting;
+  TryConnect;
+  {while not Terminated do
   begin
     if TryConnect then Break;
     Sleep(1000);
-  end;
+  end;}
   if not IsConnected then Exit;
+  _Status := ns_connected;
   try
     ReceiveMessages;
   finally
