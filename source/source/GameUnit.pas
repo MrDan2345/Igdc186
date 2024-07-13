@@ -100,6 +100,9 @@ type TLAN = record
   State: TNetState;
   Dice: Int32;
   LocalPlayer: Int32;
+  Status: String;
+  StatusLock: TUCriticalSection;
+  procedure SetStatus(const NewStatus: String);
   function OtherPlayer: Int32;
   function IsEnabled: Boolean;
   function MyName: String;
@@ -704,6 +707,16 @@ begin
   end;
 end;
 
+procedure TLAN.SetStatus(const NewStatus: String);
+begin
+  StatusLock.Enter;
+  try
+    Status := NewStatus;
+  finally
+    StatusLock.Leave;
+  end;
+end;
+
 function TLAN.OtherPlayer: Int32;
 begin
   if LocalPlayer = -1 then Exit(-1);
@@ -724,6 +737,7 @@ end;
 procedure TLAN.Setup;
 begin
   State := ns_idle;
+  Status := '';
 end;
 
 procedure TLAN.Start;
