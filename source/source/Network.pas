@@ -87,9 +87,10 @@ private
   var _Socket: Int32;
   var _Lock: TUCriticalSection;
   var _Messages: array of String;
+  function Loopback: Boolean;
   function Discovery: TInAddr;
-  procedure Search;
-  procedure Listen;
+  function Connect(const Addr: TInAddr): Boolean;
+  function ReceiveMessages: Int32;
   function GetIsConnected: Boolean;
 public
   property Port: UInt16 read _Port write _Port;
@@ -141,6 +142,7 @@ public
   procedure Execute; override;
   procedure Abort;
 end;
+
 procedure TListenThread.Execute;
   var SockAddr, ClientAddr: TInetSockAddr;
   var n: Int32;
@@ -163,9 +165,85 @@ begin
     ListenSocket := -1;
   end;
 end;
+
 procedure TListenThread.Abort;
 begin
+  Terminate;
   CloseSocket(ListenSocket);
+end;
+
+type TBeaconThread = class (TThread)
+public
+  var Port: UInt16;
+  var ListenSocket: Int32;
+  var Address: TInAddr;
+  const BeaconId: Uint32 = (Ord('S') shl 24) or (Ord('S') shl 16) or (Ord('N') shl 8) or (Ord('B'));
+  procedure Execute; override;
+  procedure Abort;
+  procedure Broadcast;
+end;
+
+procedure TBeaconThread.Execute;
+  var Buffer: UInt32;
+  var SockAddr, OtherAddr: TInetSockAddr;
+  var n, r: Int32;
+begin
+  Address.s_addr := 0;
+  ListenSocket := FpSocket(AF_INET, SOCK_DGRAM, 0);
+  try
+    SockAddr.sin_family := AF_INET;
+    SockAddr.sin_port := htons(Port);
+    SockAddr.sin_addr := StrToNetAddr('0.0.0.0');
+    n := SizeOf(SockAddr);
+    if FpBind(ListenSocket, @SockAddr, n) <> 0 then Exit;
+    r := 0;
+    while not Terminated do
+    begin
+      n := SizeOf(OtherAddr);
+      r := FpRecvFrom(ListenSocket, @Buffer, SizeOf(Buffer), 0, @OtherAddr, @n);
+      if r <> SizeOf(BeaconId) then Continue;
+      if Buffer <> BeaconId then Continue;
+      Address := OtherAddr.sin_addr;
+      Break;
+    end;
+  finally
+    CloseSocket(ListenSocket);
+  end;
+end;
+
+procedure TBeaconThread.Abort;
+begin
+  Terminate;
+  CloseSocket(ListenSocket);
+end;
+
+procedure TBeaconThread.Broadcast;
+  var Socket: Int32;
+  var MyAddr, Addr: TInAddr;
+  var i: Int32;
+begin
+  MyAddr := TUNet.GetMyIP;
+  Addr := MyAddr;
+  Socket := FpSocket(AF_INET, SOCK_DGRAM, 0);
+  try
+    for i := 1 to 255 do
+    begin
+      if i = MyAddr.s_bytes[4] then Continue;
+      Addr.s_bytes[4] := i;
+      FpSendTo(Socket, @BeaconId, SizeOf(BeaconId), 0, @Addr, SizeOf(Addr));
+    end;
+  finally
+    CloseSocket(Socket);
+  end;
+end;
+
+function TUNet.Loopback: Boolean;
+  var Addr: TInAddr;
+  var Socket: Int32;
+  var SockAddr: TInetSockAddr;
+begin
+  Addr := StrToNetAddr('127.0.0.1');
+  Result := Connect(Addr);
 end;
 
 function TUNet.Discovery: TInAddr;
@@ -180,9 +258,9 @@ function TUNet.Discovery: TInAddr;
   var Socket: Int32;
   var SockAddr: TInetSockAddr;
   var Addr: TInAddr;
-  var i: Int32;
+  var i, n: Int32;
 begin
-  {Result.s_addr := 0;
+  Result.s_addr := 0;
   Addresses := nil;
   //AddAddr(StrToNetAddr('127.0.0.1'));
   Addr := GetMyIP;
@@ -204,87 +282,68 @@ begin
 
   end;
   CloseSocket(Socket);
-  }
   Result := Default(TInAddr);
 end;
 
-procedure TUNet.Search;
-  var Addresses: array of TInAddr;
-  procedure AddAddr(Addr: TInAddr);
-    var i: Int32;
-  begin
-    i := Length(Addresses);
-    SetLength(Addresses, i + 1);
-    Addresses[i] := Addr;
-  end;
-  var BaseIP, Addr: TInAddr;
-  var i, j, n: Int32;
-  var SearchThread: TSearchThread;
-  var SearchThreads: array of TSearchThread;
-  const SimThreads = 256;
+function TUNet.Connect(const Addr: TInAddr): Boolean;
+  var Socket: Int32;
+  var SockAddr: TInetSockAddr;
 begin
-  Addresses := nil;
-  AddAddr(StrToNetAddr('127.0.0.1'));
-  BaseIP := GetMyIP;
-  Addr := BaseIP;
-  if BaseIP.s_addr <> 0 then
-  for i := 1 to 255 do
+  Socket := FpSocket(AF_INET, SOCK_STREAM, 0);
+  SockAddr.sin_family := AF_INET;
+  SockAddr.sin_port := htons(Port);
+  SockAddr.sin_addr := Addr;
+  if FpConnect(Socket, @SockAddr, SizeOf(SockAddr)) = 0 then
   begin
-    if i = BaseIP.s_bytes[4] then Continue;
-    Addr.s_bytes[4] := i;
-    AddAddr(Addr);
+    _Socket := Socket;
+    Exit(True);
   end;
-  SearchThreads := nil;
-  n := 0;
-  for i := 0 to High(Addresses) do
-  begin
-    Addr := Addresses[i];
-    SearchThread := TSearchThread.Create(True);
-    SearchThread.Addr := Addr;
-    SearchThread.Port := Port;
-    SearchThread.Counter := @n;
-    SetLength(SearchThreads, Length(SearchThreads) + 1);
-    SearchThreads[High(SearchThreads)] := SearchThread;
-    Inc(n);
-    if (i < High(Addresses)) and (n < SimThreads) then Continue;
-    for j := 0 to High(SearchThreads) do
-    begin
-      SearchThreads[j].Start;
-    end;
-    while n > 0 do Sleep(100);
-    for j := 0 to High(SearchThreads) do
-    begin
-      SearchThread := SearchThreads[j];
-      if (_Socket = -1)
-      and (SearchThread.Socket > -1) then
-      begin
-        _Socket := SearchThread.Socket;
-        WriteLn(NetAddrToStr(SearchThread.Addr));
-      end;
-      SearchThread.Free;
-    end;
-    SearchThreads := nil;
-    n := 0;
-    if _Socket > -1 then Break;
-  end;
+  CloseSocket(Socket);
+  Result := False;
 end;
 
-procedure TUNet.Listen;
-  var ListenThread: TListenThread;
+function TUNet.ReceiveMessages: Int32;
+  var i, r: Int32;
+  var Buffer: array[0..1023] of UInt8;
+  var Received: array of UInt8;
+  var s: String;
 begin
-  ListenThread := TListenThread.Create(True);
-  try
-    ListenThread.Port := Port;
-    ListenThread.Start;
-    while not ListenThread.Finished do
-    begin
-      if Terminated then ListenThread.Abort;
-      Sleep(100);
+  Received := nil;
+  while not Terminated do
+  begin
+    r := FpRecv(_Socket, @Buffer, SizeOf(Buffer), 0);
+    if r <= 0 then Exit(r);
+    i := Length(Received);
+    SetLength(Received, i + r);
+    Move(Buffer, Received[i], r);
+    _Lock.Enter;
+    try
+      i := 0;
+      while i < Length(Received) do
+      begin
+        if Received[i] = 0 then
+        begin
+          s := '';
+          if i > 0 then
+          begin
+            SetLength(s, i);
+            Move(Received[0], s[1], i);
+          end;
+          r := Length(Received) - (i + 1);
+          Move(Received[i + 1], Received[0], r);
+          SetLength(Received, r);
+          SetLength(_Messages, Length(_Messages) + 1);
+          _Messages[High(_Messages)] := s;
+          WriteLn(s);
+          i := -1;
+        end;
+        Inc(i);
+      end;
+    finally
+      _Lock.Leave;
     end;
-    _Socket := ListenThread.Socket;
-  finally
-    ListenThread.Free;
   end;
+  Result := 0;
 end;
 
 function TUNet.GetIsConnected: Boolean;
@@ -390,62 +449,64 @@ begin
 end;
 
 procedure TUNet.Execute;
-  var Buffer: array[0..1023] of UInt8;
-  var Received: array of UInt8;
-  var r, i: Int32;
-  var s: String;
-begin
-  _Socket := -1;
-  while not Terminated
-  and not IsConnected do
+  function TryConnect: Boolean;
+    var Listen: TListenThread;
+    var Beacon: TBeaconThread;
+    var MyAddr: TInAddr;
   begin
-    Search;
-    if not IsConnected then
-    begin
-      Listen;
-    end;
-  end;
-  Received := nil;
-  while not Terminated do
-  begin
-    r := FpRecv(_Socket, @Buffer, SizeOf(Buffer), 0);
-    if r <= 0 then
-    begin
-      Terminate;
-      Break;
-    end;
-    i := Length(Received);
-    SetLength(Received, i + r);
-    Move(Buffer, Received[i], r);
-    _Lock.Enter;
+    Result := False;
+    MyAddr := GetMyIP;
+    if Loopback then Exit(True);
+    Listen := TListenThread.Create(True);
+    Listen.Port := Port;
+    Beacon := TBeaconThread.Create(True);
+    Beacon.Port := Port;
+    Listen.Start;
+    Beacon.Start;
     try
-      i := 0;
-      while i < Length(Received) do
+      while True do
       begin
-        if Received[i] = 0 then
+        Beacon.Broadcast;
+        if Listen.Finished then
         begin
-          s := '';
-          if i > 0 then
-          begin
-            SetLength(s, i);
-            Move(Received[0], s[1], i);
-          end;
-          r := Length(Received) - (i + 1);
-          Move(Received[i + 1], Received[0], r);
-          SetLength(Received, r);
-          SetLength(_Messages, Length(_Messages) + 1);
-          _Messages[High(_Messages)] := s;
-          WriteLn(s);
-          i := -1;
+          _Socket := Listen.Socket;
+          Exit(True);
         end;
-        Inc(i);
+        if Beacon.Finished then
+        begin
+          if Beacon.Address.s_addr = 0 then
+          begin
+            Beacon.Free;
+            Beacon := TBeaconThread.Create(True);
+            Beacon.Port := Port;
+            Beacon.Start;
+            Continue;
+          end;
+          if Beacon.Address.s_addr > MyAddr.s_addr then Continue;
+          if Connect(Beacon.Address) then Exit(True);
+        end;
+        Sleep(2000);
       end;
     finally
-      _Lock.Leave;
+      Beacon.Abort;
+      Beacon.WaitFor;
+      Beacon.Free;
+      Listen.Abort;
+      Listen.WaitFor;
+      Listen.Free;
     end;
   end;
-  if IsConnected then
+begin
+  _Socket := -1;
+  while not Terminated do
   begin
+    if TryConnect then Break;
+    Sleep(1000);
+  end;
+  if not IsConnected then Exit;
+  try
+    ReceiveMessages;
+  finally
     CloseSocket(_Socket);
   end;
 end;
