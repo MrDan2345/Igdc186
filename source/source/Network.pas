@@ -196,7 +196,9 @@ procedure TBeaconThread.Execute;
   var Buffer: UInt32;
   var SockAddr, OtherAddr: TInetSockAddr;
   var n, r: Int32;
+  var MyAddr: TInAddr;
 begin
+  MyAddr := TUNet.GetMyIP;
   Address.s_addr := 0;
   ListenSocket := FpSocket(AF_INET, SOCK_DGRAM, 0);
   try
@@ -210,6 +212,7 @@ begin
     begin
       n := SizeOf(OtherAddr);
       r := FpRecvFrom(ListenSocket, @Buffer, SizeOf(Buffer), 0, @OtherAddr, @n);
+      if MyAddr.s_addr = OtherAddr.sin_addr.s_addr then Continue;
       //if Buffer <> BeaconId then Break;
       WriteLn('Beacon: ', NetAddrToStr(OtherAddr.sin_addr));
       Address := OtherAddr.sin_addr;
