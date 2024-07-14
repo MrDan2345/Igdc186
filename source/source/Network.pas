@@ -237,6 +237,7 @@ begin
       Addr.s_bytes[4] := i;
       FpSendTo(Socket, @BeaconId, SizeOf(BeaconId), 0, @Addr, SizeOf(Addr));
     end;
+    WriteLn('Beacon Broadcast Complete');
   finally
     CloseSocket(Socket);
   end;
@@ -433,7 +434,7 @@ procedure TUNet.Execute;
     try
       while True do
       begin
-        //Beacon.Broadcast;
+        Beacon.Broadcast;
         if Listen.Finished then
         begin
           _Socket := Listen.Socket;
@@ -474,12 +475,11 @@ procedure TUNet.Execute;
 begin
   _Socket := -1;
   _Status := ns_connecting;
-  TryConnect;
-  {while not Terminated do
+  while not Terminated do
   begin
     if TryConnect then Break;
     Sleep(1000);
-  end;}
+  end;
   if not IsConnected then Exit;
   _Status := ns_connected;
   try
