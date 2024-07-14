@@ -165,6 +165,7 @@ begin
     Addr := ClientAddr.sin_addr;
     WriteLn(NetAddrToStr(Addr));
   finally
+    FpShutdown(ListenSocket, SHUT_RDWR);
     CloseSocket(ListenSocket);
     ListenSocket := -1;
   end;
@@ -173,7 +174,10 @@ end;
 procedure TListenThread.Abort;
 begin
   Terminate;
+  if ListenSocket = -1 then Exit;
+  FpShutdown(ListenSocket, SHUT_RDWR);
   CloseSocket(ListenSocket);
+  ListenSocket := -1;
 end;
 
 type TBeaconThread = class (TThread)
@@ -211,15 +215,19 @@ begin
       Break;
     end;
   finally
+    FpShutDown(ListenSocket, SHUT_RDWR);
     CloseSocket(ListenSocket);
+    ListenSocket := -1;
   end;
 end;
 
 procedure TBeaconThread.Abort;
 begin
   Terminate;
+  if ListenSocket = -1 then Exit;
   FpShutDown(ListenSocket, SHUT_RDWR);
   CloseSocket(ListenSocket);
+  ListenSocket := -1;
 end;
 
 procedure TBeaconThread.Broadcast;
