@@ -205,7 +205,7 @@ begin
     begin
       n := SizeOf(OtherAddr);
       r := FpRecvFrom(ListenSocket, @Buffer, SizeOf(Buffer), 0, @OtherAddr, @n);
-      if Buffer <> BeaconId then Break;
+      //if Buffer <> BeaconId then Break;
       WriteLn('Beacon: ', NetAddrToStr(OtherAddr.sin_addr));
       Address := OtherAddr.sin_addr;
       Break;
@@ -224,17 +224,20 @@ end;
 
 procedure TBeaconThread.Broadcast;
   var Socket: Int32;
-  var MyAddr, Addr: TInAddr;
+  var MyAddr: TInAddr;
+  var Addr: TInetSockAddr;
   var i: Int32;
 begin
   MyAddr := TUNet.GetMyIP;
-  Addr := MyAddr;
+  Addr.sin_family := AF_INET;
+  Addr.sin_port := htons(Port);
+  Addr.sin_addr := MyAddr;
   Socket := FpSocket(AF_INET, SOCK_DGRAM, 0);
   try
     for i := 1 to 255 do
     begin
       if i = MyAddr.s_bytes[4] then Continue;
-      Addr.s_bytes[4] := i;
+      Addr.sin_addr.s_bytes[4] := i;
       FpSendTo(Socket, @BeaconId, SizeOf(BeaconId), 0, @Addr, SizeOf(Addr));
     end;
     WriteLn('Beacon Broadcast Complete');
@@ -425,6 +428,7 @@ procedure TUNet.Execute;
     Result := False;
     MyAddr := GetMyIP;
     if Loopback then Exit(True);
+    //if Connect(StrToNetAddr('192.168.1.139')) then Exit(True);
     Listen := TListenThread.Create(True);
     Listen.Port := Port;
     Beacon := TBeaconThread.Create(True);
