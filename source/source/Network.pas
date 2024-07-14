@@ -185,6 +185,7 @@ public
   var Port: UInt16;
   var ListenSocket: Int32;
   var Address: TInAddr;
+  var BroadcastTime: UInt64;
   const BeaconId: Uint32 = (Ord('S') shl 24) or (Ord('S') shl 16) or (Ord('N') shl 8) or (Ord('B'));
   procedure Execute; override;
   procedure Abort;
@@ -235,7 +236,11 @@ procedure TBeaconThread.Broadcast;
   var MyAddr: TInAddr;
   var Addr: TInetSockAddr;
   var i: Int32;
+  var NewTime: UInt64;
 begin
+  NewTime := GetTickCount64;
+  if NewTime - BroadcastTime < 5000 then Exit;
+  BroadcastTime := NewTime;
   MyAddr := TUNet.GetMyIP;
   Addr.sin_family := AF_INET;
   Addr.sin_port := htons(Port);
@@ -469,19 +474,13 @@ procedure TUNet.Execute;
       end;
     finally
       WriteLn('Socket: ', _Socket);
-      WriteLn('Finished connecting');
       Beacon.Abort;
-      WriteLn('Beacon.Abort');
       Beacon.WaitFor;
-      WriteLn('Beacon.WaitFor');
       Beacon.Free;
-      WriteLn('Beacon.Free');
       Listen.Abort;
-      WriteLn('Listen.Abort');
       Listen.WaitFor;
-      WriteLn('Listen.WaitFor');
       Listen.Free;
-      WriteLn('Listen.Free');
+      WriteLn('Finished connecting');
     end;
   end;
 begin
