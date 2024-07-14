@@ -780,7 +780,7 @@ procedure TLAN.Update;
   var s: String;
   var i, OtherDice, x, y: Int32;
 begin
-  SetStatus(specialize UEnumToStr<TUNetStatus>(Net.Status));
+  //SetStatus(specialize UEnumToStr<TUNetStatus>(Net.Status));
   case State of
     ns_connect:
     begin
@@ -839,12 +839,15 @@ begin
         end;
       end;
     end;
+    else
+    begin
+    end;
   end;
 end;
 
 procedure TLAN.RenderMenu;
 begin
-  Game.Font1.Print(0 ,0, Status);
+  //Game.Font1.Print(0 ,0, Status);
 end;
 
 procedure TLAN.Action(const Pos: TPoint);
