@@ -110,32 +110,6 @@ end;
 
 implementation
 
-type TSearchThread = class (TThread)
-public
-  var Socket: Int32;
-  var Addr: TInAddr;
-  var Port: UInt16;
-  var Counter: PInt32;
-  procedure Execute; override;
-end;
-
-procedure TSearchThread.Execute;
-  var SockAddr: TInetSockAddr;
-begin
-  Socket := FpSocket(AF_INET, SOCK_STREAM, 0);
-  SockAddr.sin_family := AF_INET;
-  SockAddr.sin_addr := Addr;
-  SockAddr.sin_port := htons(Port);
-  try
-    if FpConnect(Socket, @SockAddr, SizeOf(SockAddr)) = 0 then Exit;
-    CloseSocket(Socket);
-    Socket := -1;
-  finally
-    WriteLn(NetAddrToStr(Addr));
-    InterlockedDecrement(Counter^);
-  end;
-end;
-
 type TListenThread = class (TThread)
 public
   var ListenSocket: Int32;
