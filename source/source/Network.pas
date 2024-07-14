@@ -494,13 +494,15 @@ begin
 end;
 
 procedure TUNet.Send(const Msg: String);
-  var i: Int32;
+  var i, r: Int32;
 begin
   if not IsConnected then Exit;
-  i := 1;
+  i := 0;
   while i < Length(Msg) + 1 do
   begin
-    i += FpSend(_Socket, @Msg[i], Length(Msg) + 2 - i, 0);
+    r := FpSend(_Socket, @Msg[i + 1], Length(Msg) + 1 - i, 0);
+    if r <= 0 then Exit;
+    i += r;
   end;
 end;
 
