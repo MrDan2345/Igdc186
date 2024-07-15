@@ -745,7 +745,7 @@ begin
   LocalPlayer := -1;
   Dice := -1;
   State := ns_connect;
-  Net := TUNet.Run;
+  Net := TUNet.Run(9658);
 end;
 
 procedure TLAN.Stop;
