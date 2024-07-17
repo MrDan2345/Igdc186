@@ -187,7 +187,7 @@ begin
       n := SizeOf(OtherAddr);
       r := FpRecvFrom(ListenSocket, @Buffer, SizeOf(Buffer), 0, @OtherAddr, @n);
       if MyAddr.s_addr = OtherAddr.sin_addr.s_addr then Continue;
-      //if Buffer <> BeaconId then Break;
+      if Buffer <> BeaconId then Continue;
       WriteLn('Beacon: ', NetAddrToStr(OtherAddr.sin_addr));
       Address := OtherAddr.sin_addr;
       Break;
