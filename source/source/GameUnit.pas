@@ -763,16 +763,16 @@ procedure TLAN.Update;
   begin
     Dice := Random(1000000);
     Json := TUJson.Make;
-    Json.Ptr.AddValue('dice', 'id');
-    Json.Ptr.AddValue(Dice, 'dice');
+    Json.Ptr.AddValue('id', 'dice');
+    Json.Ptr.AddValue('dice', Dice);
     Net.Send(Json.Ptr.ToString);
   end;
   procedure Aquaint;
     var Json: TUJsonRef;
   begin
     Json := TUJson.Make;
-    Json.Ptr.AddValue('name', 'id');
-    Json.Ptr.AddValue(MyName, 'name');
+    Json.Ptr.AddValue('id', 'name');
+    Json.Ptr.AddValue('name', MyName);
     Net.Send(Json.Ptr.ToString);
   end;
   var Json: TUJsonRef;
@@ -855,9 +855,9 @@ procedure TLAN.Action(const Pos: TPoint);
 begin
   if not IsEnabled then Exit;
   Json := TUJson.Make;
-  Json.Ptr.AddValue('move', 'id');
-  Json.Ptr.AddValue(Pos.x, 'x');
-  Json.Ptr.AddValue(Pos.y, 'y');
+  Json.Ptr.AddValue('id', 'move');
+  Json.Ptr.AddValue('x', Pos.x);
+  Json.Ptr.AddValue('y', Pos.y);
   Net.Send(Json.Ptr.ToString);
 end;
 

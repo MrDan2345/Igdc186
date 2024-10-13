@@ -4,82 +4,9 @@ interface
 
 uses
   SysUtils,
-{$if defined(WINDOWS)}
-  WinSock2,
-{$elseif defined(UNIX)}
-{$endif}
-  Sockets,
   Classes,
-  CommonUtils;
-
-type
-{$if not defined(WINDOWS)}
-  PAddrInfo = ^TAddrInfo;
-  PPAddrInfo = ^PAddrInfo;
-  TAddrInfo = record
-    ai_flags: Int32;
-    ai_family: Int32;
-    ai_socktype: Int32;
-    ai_protocol: Int32;
-    ai_addrlen: Int32;
-    ai_addr: PSockAddr;
-    ai_canonname: PAnsiChar;
-    ai_next: PAddrInfo;
-  end;
-
-  PHostEnt = ^THostEnt;
-  THostEnt = record
-    h_name: PAnsiChar;
-    h_aliases: ^PAnsiChar;
-    h_addrtype: LongInt;
-    h_length: LongInt;
-    h_addr_list: ^PAnsiChar;
-  end;
-{$endif}
-
-  PPIfAddrs = ^PIfAddrs;
-  PIfAddrs = ^TIfAddrs;
-  TIfAddrs = record
-    ifa_next: PIfAddrs;
-    ifa_name: PAnsiChar;
-    ifa_flags: UInt32;
-    ifa_addr: PSockAddr;
-    ifa_netmask: PSockAddr;
-    ifa_ifu: PSockAddr;
-    ifa_data: Pointer;
-  end;
-
-const
-  AI_PASSIVE = 1;
-
-{$if not defined(WINDOWS)}
-function GetIfAddrs(
-  const IfAddrs: PPIfAddrs
-): Int32; cdecl; external 'c' name 'getifaddrs';
-procedure FreeIfAddrs(
-  const IfaAdrs: PIfAddrs
-); cdecl; external 'c' name 'freeifaddrs';
-function GetAddrInfo(
-  const Node: PAnsiChar;
-  const Service: PAnsiChar;
-  const Hints: PAddrInfo;
-  const Results: PPAddrInfo
-): Integer; cdecl; external 'c' name 'getaddrinfo';
-procedure FreeAddrInfo(
-  const AddrInfo: PAddrInfo
-); cdecl; external 'c' name 'freeaddrinfo';
-function GetHostName(
-  const Name: PAnsiChar;
-  const Len: Integer
-): Integer; external 'c' name 'gethostname';
-function GetHostByName(
-  const Name: PAnsiChar
-): PHostEnt; external 'c' name 'gethostbyname';
-
-function PlatformLibOpen(Name: PAnsiChar; Flags: LongInt): TLibHandle; cdecl; external 'dl' name 'dlopen';
-function PlatformLibClose(Handle: TLibHandle): LongInt; cdecl; external 'dl' name 'dlclose';
-function PlatformLibAddress(Handle: TLibHandle; ProcName: PAnsiChar): Pointer; cdecl; external 'dl' name 'dlsym';
-{$endif}
+  CommonUtils,
+  NetUtils;
 
 type TUNetStatus = (ns_idle, ns_connecting, ns_connected);
 
@@ -91,7 +18,7 @@ private
   var _Lock: TUCriticalSection;
   var _Messages: array of String;
   function Loopback: Boolean;
-  function Connect(const Addr: TInAddr): Boolean;
+  function Connect(const Addr: TUInAddr): Boolean;
   function ReceiveMessages: Int32;
   function GetIsConnected: Boolean;
 public
@@ -99,7 +26,7 @@ public
   property Port: UInt16 read _Port write _Port;
   property IsConnected: Boolean read GetIsConnected;
   class function GetMyName: String;
-  class function GetMyIP: TInAddr;
+  class function GetMyIP: TUInAddr;
   class function Run(const APort: UInt16 = 6667): TUNet;
   class procedure Test;
   procedure AfterConstruction; override;
@@ -112,36 +39,35 @@ implementation
 
 type TListenThread = class (TThread)
 public
-  var ListenSocket: Int32;
+  var ListenSocket: TUSocket;
   var Socket: Int32;
   var Port: UInt16;
-  var Addr: TInAddr;
+  var Addr: TUInAddr;
   procedure Execute; override;
   procedure Abort;
 end;
 
 procedure TListenThread.Execute;
-  var SockAddr, ClientAddr: TInetSockAddr;
+  var SockAddr, ClientAddr: TUInetSockAddr;
   var n: Int32;
 begin
-  ListenSocket := FpSocket(AF_INET, SOCK_STREAM, 0);
+  ListenSocket := TUSocket.CreateTCP();
   try
     SockAddr.sin_family := AF_INET;
     SockAddr.sin_port := htons(Port);
-    SockAddr.sin_addr := StrToNetAddr('0.0.0.0');
+    SockAddr.sin_addr := TUInAddr.Zero;
     n := SizeOf(SockAddr);
-    if FpBind(ListenSocket, @SockAddr, n) <> 0 then Exit;
-    if FpListen(ListenSocket, 8) <> 0 then Exit;
+    if ListenSocket.Bind(@SockAddr, n) <> 0 then Exit;
+    if ListenSocket.Listen(8) <> 0 then Exit;
     n := SizeOf(ClientAddr);
-    ClientAddr := Default(TInetSockAddr);
-    Socket := FpAccept(ListenSocket, @ClientAddr, @n);
+    ClientAddr := TUInetSockAddr.Default;
+    Socket := ListenSocket.Accept(@ClientAddr, @n);
     if Socket < 0 then Exit;
     Addr := ClientAddr.sin_addr;
-    WriteLn(NetAddrToStr(Addr));
+    WriteLn(UNetNetAddrToStr(Addr));
   finally
-    FpShutdown(ListenSocket, SHUT_RDWR);
-    CloseSocket(ListenSocket);
-    ListenSocket := -1;
+    ListenSocket.Shutdown();
+    ListenSocket.Close;
   end;
 end;
 
@@ -149,16 +75,15 @@ procedure TListenThread.Abort;
 begin
   Terminate;
   if ListenSocket = -1 then Exit;
-  FpShutdown(ListenSocket, SHUT_RDWR);
-  CloseSocket(ListenSocket);
-  ListenSocket := -1;
+  ListenSocket.Shutdown();
+  ListenSocket.Close;
 end;
 
 type TBeaconThread = class (TThread)
 public
   var Port: UInt16;
-  var ListenSocket: Int32;
-  var Address: TInAddr;
+  var ListenSocket: TUSocket;
+  var Address: TUInAddr;
   var BroadcastTime: UInt64;
   const BeaconId: Uint32 = (Ord('S') shl 24) or (Ord('S') shl 16) or (Ord('N') shl 8) or (Ord('B'));
   procedure Execute; override;
@@ -168,34 +93,33 @@ end;
 
 procedure TBeaconThread.Execute;
   var Buffer: UInt32;
-  var SockAddr, OtherAddr: TInetSockAddr;
+  var SockAddr, OtherAddr: TUInetSockAddr;
   var n, r: Int32;
-  var MyAddr: TInAddr;
+  var MyAddr: TUInAddr;
 begin
   MyAddr := TUNet.GetMyIP;
-  Address.s_addr := 0;
-  ListenSocket := FpSocket(AF_INET, SOCK_DGRAM, 0);
+  Address := TUInAddr.Zero;
+  ListenSocket := TUSocket.CreateUDP();
   try
     SockAddr.sin_family := AF_INET;
     SockAddr.sin_port := htons(Port);
-    SockAddr.sin_addr := StrToNetAddr('0.0.0.0');
+    SockAddr.sin_addr := TUInAddr.Zero;
     n := SizeOf(SockAddr);
-    if FpBind(ListenSocket, @SockAddr, n) <> 0 then Exit;
+    if ListenSocket.Bind(@SockAddr, n) <> 0 then Exit;
     r := 0;
     while not Terminated do
     begin
       n := SizeOf(OtherAddr);
-      r := FpRecvFrom(ListenSocket, @Buffer, SizeOf(Buffer), 0, @OtherAddr, @n);
-      if MyAddr.s_addr = OtherAddr.sin_addr.s_addr then Continue;
+      r := ListenSocket.RecvFrom(@Buffer, SizeOf(Buffer), 0, @OtherAddr, @n);
+      if MyAddr.Addr32 = OtherAddr.sin_addr.Addr32 then Continue;
       if Buffer <> BeaconId then Continue;
-      WriteLn('Beacon: ', NetAddrToStr(OtherAddr.sin_addr));
+      WriteLn('Beacon: ', UNetNetAddrToStr(OtherAddr.sin_addr));
       Address := OtherAddr.sin_addr;
       Break;
     end;
   finally
-    FpShutDown(ListenSocket, SHUT_RDWR);
-    CloseSocket(ListenSocket);
-    ListenSocket := -1;
+    ListenSocket.Shutdown();
+    ListenSocket.Close;
   end;
 end;
 
@@ -203,15 +127,14 @@ procedure TBeaconThread.Abort;
 begin
   Terminate;
   if ListenSocket = -1 then Exit;
-  FpShutDown(ListenSocket, SHUT_RDWR);
-  CloseSocket(ListenSocket);
-  ListenSocket := -1;
+  ListenSocket.Shutdown();
+  ListenSocket.Close;
 end;
 
 procedure TBeaconThread.Broadcast;
-  var Socket: Int32;
-  var MyAddr: TInAddr;
-  var Addr: TInetSockAddr;
+  var Socket: TUSocket;
+  var MyAddr: TUInAddr;
+  var Addr: TUInetSockAddr;
   var i: Int32;
   var NewTime: UInt64;
 begin
@@ -222,43 +145,41 @@ begin
   Addr.sin_family := AF_INET;
   Addr.sin_port := htons(Port);
   Addr.sin_addr := MyAddr;
-  Socket := FpSocket(AF_INET, SOCK_DGRAM, 0);
+  Socket := TUSocket.CreateUDP();
   try
     for i := 1 to 255 do
     begin
-      if i = MyAddr.s_bytes[4] then Continue;
-      Addr.sin_addr.s_bytes[4] := i;
-      FpSendTo(Socket, @BeaconId, SizeOf(BeaconId), 0, @Addr, SizeOf(Addr));
+      if i = MyAddr.Addr8[3] then Continue;
+      Addr.sin_addr.Addr8[3] := i;
+      Socket.SendTo(@BeaconId, SizeOf(BeaconId), 0, @Addr, SizeOf(Addr));
     end;
     WriteLn('Beacon Broadcast Complete');
   finally
-    CloseSocket(Socket);
+    Socket.Close;
   end;
 end;
 
 function TUNet.Loopback: Boolean;
-  var Addr: TInAddr;
-  var Socket: Int32;
-  var SockAddr: TInetSockAddr;
+  var Addr: TUInAddr;
 begin
-  Addr := StrToNetAddr('127.0.0.1');
+  Addr := TUInAddr.LocalhostN;
   Result := Connect(Addr);
 end;
 
-function TUNet.Connect(const Addr: TInAddr): Boolean;
+function TUNet.Connect(const Addr: TUInAddr): Boolean;
   var Socket: Int32;
-  var SockAddr: TInetSockAddr;
+  var SockAddr: TUInetSockAddr;
 begin
-  Socket := FpSocket(AF_INET, SOCK_STREAM, 0);
+  Socket := TUSocket.CreateTCP();
   SockAddr.sin_family := AF_INET;
-  SockAddr.sin_port := htons(Port);
+  SockAddr.sin_port := HToNs(Port);
   SockAddr.sin_addr := Addr;
-  if FpConnect(Socket, @SockAddr, SizeOf(SockAddr)) = 0 then
+  if Socket.Connect(@SockAddr, SizeOf(SockAddr)) = 0 then
   begin
     _Socket := Socket;
     Exit(True);
   end;
-  CloseSocket(Socket);
+  Socket.Close;
   Result := False;
 end;
 
@@ -271,7 +192,7 @@ begin
   Received := nil;
   while not Terminated do
   begin
-    r := FpRecv(_Socket, @Buffer, SizeOf(Buffer), 0);
+    r := _Socket.Recv(@Buffer, SizeOf(Buffer), 0);
     if r <= 0 then Exit(r);
     i := Length(Received);
     SetLength(Received, i + r);
@@ -312,65 +233,13 @@ begin
 end;
 
 class function TUNet.GetMyName: String;
-  var Buffer: array[0..255] of AnsiChar;
 begin
-  GetHostName(@Buffer, SizeOf(Buffer));
-  Result := Buffer;
+  Result := UNetHostName;
 end;
 
-class function TUNet.GetMyIP: TInAddr;
-{$if defined(WINDOWS)}
-  type TInAddrArr = array[UInt32] of TInAddr;
-  type PInAddrArr = ^TInAddrArr;
-  var AddrArr: PInAddrArr;
-  var Host: PHostEnt;
-{$else}
-  var r: Int32;
-  var IfAddrs, a: PIfAddrs;
-{$endif}
-  var Addr: Sockets.TInAddr;
-  var s: String;
-  var i: Int32;
+class function TUNet.GetMyIP: TUInAddr;
 begin
-  Result.s_addr := 0;
-{$if defined(WINDOWS)}
-  Host := GetHostByName(PAnsiChar(GetMyName));
-  if not Assigned(Host) then Exit;
-  AddrArr := PInAddrArr(Host^.h_Addr_List^);
-  i := 0;
-  while AddrArr^[i].S_addr <> 0 do
-  try
-    Addr := Sockets.PInAddr(@AddrArr^[i].S_addr)^;
-    if (Result.s_addr = 0)
-    or (Addr.s_bytes[1] = 192) then
-    begin
-      Result := Addr;
-    end;
-    //s := NetAddrToStr(Addr);
-    //WriteLn(s);
-  finally
-    Inc(i);
-  end;
-{$else}
-  r := GetIfAddrs(@IfAddrs);
-  if r <> 0 then Exit;
-  a := IfAddrs;
-  while Assigned(a) do
-  try
-    if not Assigned(a^.ifa_addr) then Continue;
-    Addr := a^.ifa_addr^.sin_addr;
-    if (Result.s_addr = 0)
-    or (Addr.s_bytes[1] = 192) then
-    begin
-      Result := Addr;
-    end;
-    //s := NetAddrToStr(Addr);
-    //WriteLn(s);
-  finally
-    a := a^.ifa_next;
-  end;
-  FreeIfAddrs(IfAddrs);
-{$endif}
+  Result := UNetLocalAddr;
 end;
 
 class function TUNet.Run(const APort: UInt16): TUNet;
@@ -381,25 +250,9 @@ begin
 end;
 
 class procedure TUNet.Test;
-  {
-  type TInAddrArr = array[UInt32] of TInAddr;
-  type PInAddrArr = ^TInAddrArr;
-  var Hints: TAddrInfo;
-  var Info: PAddrInfo;
-  var p: PAddrInfo;
-  var LibHandle: TLibHandle;
-  var ProcAddr: Pointer;
-  var i, r: Int32;
-  var Buffer: array[0..255] of AnsiChar;
-  var HostName, s: String;
-  var HostEnt: PHostEnt;
-  var AddrArr: PInAddrArr;
-  var Addr: Sockets.TInAddr;
-  var IfAddrs, a: PIfAddrs;
-  }
 begin
   WriteLn(GetMyName);
-  WriteLn(NetAddrToStr(GetMyIP));
+  WriteLn(UNetNetAddrToStr(GetMyIP));
 end;
 
 procedure TUNet.AfterConstruction;
@@ -413,12 +266,11 @@ procedure TUNet.Execute;
   function TryConnect: Boolean;
     var Listen: TListenThread;
     var Beacon: TBeaconThread;
-    var MyAddr: TInAddr;
+    var MyAddr: TUInAddr;
   begin
     Result := False;
     MyAddr := GetMyIP;
     if Loopback then Exit(True);
-    //if Connect(StrToNetAddr('192.168.1.139')) then Exit(True);
     Listen := TListenThread.Create(True);
     Listen.Port := Port;
     Beacon := TBeaconThread.Create(True);
@@ -436,7 +288,7 @@ procedure TUNet.Execute;
         end;
         if Beacon.Finished then
         begin
-          if Beacon.Address.s_addr = 0 then
+          if Beacon.Address.Addr32 = 0 then
           begin
             Beacon.Free;
             Beacon := TBeaconThread.Create(True);
@@ -444,7 +296,7 @@ procedure TUNet.Execute;
             Beacon.Start;
             Continue;
           end;
-          if Beacon.Address.s_addr > MyAddr.s_addr then Continue;
+          if Beacon.Address.Addr32 > MyAddr.Addr32 then Continue;
           if Connect(Beacon.Address) then Exit(True);
         end;
         Sleep(2000);
@@ -473,7 +325,7 @@ begin
   try
     ReceiveMessages;
   finally
-    CloseSocket(_Socket);
+    _Socket.Close;
   end;
 end;
 
@@ -484,7 +336,7 @@ begin
   i := 0;
   while i < Length(Msg) + 1 do
   begin
-    r := FpSend(_Socket, @Msg[i + 1], Length(Msg) + 1 - i, 0);
+    r := _Socket.Send(@Msg[i + 1], Length(Msg) + 1 - i, 0);
     if r <= 0 then Exit;
     i += r;
   end;
