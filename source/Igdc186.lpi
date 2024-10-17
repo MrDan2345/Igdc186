@@ -63,11 +63,6 @@
               </Win32>
             </Options>
           </Linking>
-          <Other>
-            <ConfigFile>
-              <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
-            </ConfigFile>
-          </Other>
         </CompilerOptions>
       </Item2>
       <Item3 Name="Release">
@@ -79,7 +74,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="g2mp\source;g2mp\source\box2d;g2mp\source\spine;source"/>
+            <OtherUnitFiles Value="g2mp\source;g2mp\source\box2d;g2mp\source\spine;source;PasUtils"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <CodeGeneration>
@@ -95,11 +90,6 @@
             </Debugging>
             <LinkSmart Value="True"/>
           </Linking>
-          <Other>
-            <ConfigFile>
-              <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
-            </ConfigFile>
-          </Other>
         </CompilerOptions>
       </Item3>
     </BuildModes>
@@ -135,11 +125,6 @@
         <DebugInfoType Value="dsDwarf3"/>
       </Debugging>
     </Linking>
-    <Other>
-      <ConfigFile>
-        <WriteConfigFilePath Value="$(ProjOutDir)\fpclaz.cfg"/>
-      </ConfigFile>
-    </Other>
   </CompilerOptions>
   <Debugging>
     <Exceptions Count="3">

@@ -765,7 +765,7 @@ procedure TLAN.Update;
     Json := TUJson.Make;
     Json.Ptr.AddValue('id', 'dice');
     Json.Ptr.AddValue('dice', Dice);
-    Net.Send(Json.Ptr.ToString);
+    Net.Send(Json.Ptr.AsString);
   end;
   procedure Aquaint;
     var Json: TUJsonRef;
@@ -773,7 +773,7 @@ procedure TLAN.Update;
     Json := TUJson.Make;
     Json.Ptr.AddValue('id', 'name');
     Json.Ptr.AddValue('name', MyName);
-    Net.Send(Json.Ptr.ToString);
+    Net.Send(Json.Ptr.AsString);
   end;
   var Json: TUJsonRef;
   var m: TStringArray;
@@ -858,7 +858,7 @@ begin
   Json.Ptr.AddValue('id', 'move');
   Json.Ptr.AddValue('x', Pos.x);
   Json.Ptr.AddValue('y', Pos.y);
-  Net.Send(Json.Ptr.ToString);
+  Net.Send(Json.Ptr.AsString);
 end;
 
 //TGame BEGIN
